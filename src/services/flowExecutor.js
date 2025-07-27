@@ -1,238 +1,261 @@
-import { SeiAgentKit } from '../../external/sei-agent-kit/src/agent/index.js';
-import { ModelProviderName } from '../../external/sei-agent-kit/src/types/index.js';
 import { logger } from '../utils/logger.js';
 
-class BackendFlowExecutor {
+export class BackendFlowExecutor {
   constructor() {
-    this.executionContext = {
-      variables: new Map(),
-      nodeResults: new Map(),
-      executionStatus: new Map(),
-      blockchainState: null,
-      flowMetadata: {
-        startTime: new Date(),
-        currentNode: null,
-        executionPath: []
-      }
-    };
+    this.variables = {};
+    this.nodeResults = {};
+    this.shouldStop = false;
   }
 
-  async initializeBlockchain(privateKey, provider = ModelProviderName.OPENAI) {
+  async executeFlow(flowData) {
+    const { nodes, edges } = flowData;
+    if (!Array.isArray(nodes) || !Array.isArray(edges)) {
+      throw new Error('Invalid flow: nodes and edges must be arrays');
+    }
+
+    // Build node map for quick lookup
+    const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+    
+    // Find Start node
+    const startNode = nodes.find(n => n.type === 'start');
+    if (!startNode) throw new Error('No Start node found');
+
+    // Execute flow starting from start node
+    await this.executeNodeRecursive(startNode, nodeMap, edges, new Set());
+    
+    logger.info('All nodes executed successfully.');
+    return this.nodeResults;
+  }
+
+  async executeNodeRecursive(node, nodeMap, edges, visited, isIntervalExecution = false) {
+    // Check if we should stop execution
+    if (this.shouldStop) {
+      logger.info(`Stopping execution due to stop condition`);
+      return;
+    }
+    
+    // For interval executions, don't mark nodes as visited to allow re-execution
+    if (!isIntervalExecution && visited.has(node.id)) return;
+    if (!isIntervalExecution) visited.add(node.id);
+    
+    logger.info(`[START] Node ${node.type} (${node.id})${isIntervalExecution ? ' [INTERVAL]' : ''}`);
     try {
-      const seiAgent = new SeiAgentKit(privateKey, provider);
+      const result = await this.executeNode(node, nodeMap, edges, visited);
+      this.nodeResults[node.id] = result;
+      logger.info(`[END] Node ${node.type} (${node.id})${isIntervalExecution ? ' [INTERVAL]' : ''}`);
       
-      this.executionContext.blockchainState = {
-        seiAgentKit: seiAgent,
-        walletAddress: seiAgent.wallet_address,
-        network: 'mainnet'
-      };
+      // Check for stop condition after conditional nodes
+      if (node.type === 'conditional' && this.nodeResults[node.id] === true) {
+        // Check if this is a stop condition (you can customize this logic)
+        const config = node.data?.config;
+        if (config && config.value1 === 'stopMonitoring' && config.value2 === 'true') {
+          this.shouldStop = true;
+          logger.info(`Stop condition met: ${config.value1} = ${config.value2}`);
+          return;
+        }
+      }
       
-      logger.info('SeiAgentKit initialized successfully');
-      return { success: true, walletAddress: seiAgent.wallet_address };
-    } catch (error) {
-      logger.error('Failed to initialize SeiAgentKit:', error);
-      throw error;
+      // Find next nodes based on edges
+      const nextEdges = edges.filter(e => e.source === node.id);
+      
+      for (const edge of nextEdges) {
+        const nextNode = nodeMap[edge.target];
+        if (!nextNode) continue;
+        
+        // For conditional nodes, check the sourceHandle to determine path
+        if (node.type === 'conditional' && edge.sourceHandle) {
+          const conditionResult = this.nodeResults[node.id];
+          const shouldFollow = edge.sourceHandle === 'true' ? conditionResult : !conditionResult;
+          
+          if (shouldFollow) {
+            await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, isIntervalExecution);
+          }
+        } else {
+          // For other nodes, always follow
+          await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, isIntervalExecution);
+        }
+      }
+    } catch (err) {
+      logger.error(`[ERROR] Node ${node.type} (${node.id}): ${err.message}`);
+      throw err;
     }
   }
 
-  async executeNode(node, frontendVariables = {}) {
-    // Merge frontend variables with backend context
-    this.executionContext.variables = new Map(Object.entries(frontendVariables));
-    
-    const startTime = Date.now();
-    
-    try {
-      this.executionContext.executionStatus.set(node.id, 'running');
-      this.executionContext.flowMetadata.currentNode = node.id;
-      this.executionContext.flowMetadata.executionPath.push(node.id);
-      
-      let result;
-      
-      switch (node.type) {
-        case 'blockchain':
-          result = await this.executeBlockchainNode(node);
-          break;
-        case 'ai-agent':
-          result = await this.executeAIAgentNode(node);
-          break;
-        case 'api-call':
-          result = await this.executeAPICallNode(node);
-          break;
-        case 'database':
-          result = await this.executeDatabaseNode(node);
-          break;
-        default:
-          throw new Error(`Backend executor does not handle node type: ${node.type}`);
-      }
-      
-      const executionTime = Date.now() - startTime;
-      this.executionContext.nodeResults.set(node.id, result);
-      this.executionContext.executionStatus.set(node.id, 'completed');
-      
-      return {
-        success: true,
-        data: result,
-        nodeId: node.id,
-        executionTime,
-        variables: Object.fromEntries(this.executionContext.variables)
-      };
-      
-    } catch (error) {
-      const executionTime = Date.now() - startTime;
-      this.executionContext.executionStatus.set(node.id, 'error');
-      
-      logger.error(`Node ${node.id} execution failed:`, error);
-      
-      return {
-        success: false,
-        error: error.message,
-        nodeId: node.id,
-        executionTime,
-        variables: Object.fromEntries(this.executionContext.variables)
-      };
+  async executeNode(node, nodeMap, edges, visited) {
+    switch (node.type) {
+      case 'start':
+        return null;
+      case 'variable':
+        return this.executeVariableNode(node);
+      case 'arithmetic':
+        return this.executeArithmeticNode(node);
+      case 'conditional':
+        return this.executeConditionalNode(node);
+      case 'timer':
+        return this.executeTimerNode(node, nodeMap, edges, visited);
+      case 'blockchain':
+        return this.executeBlockchainNode(node);
+      default:
+        throw new Error(`Unknown node type: ${node.type}`);
     }
+  }
+
+  executeVariableNode(node) {
+    const { config } = node.data;
+    if (!config || !config.variableName) throw new Error('Variable node missing variableName');
+    
+    const operation = config.operation || 'set';
+    const variableName = config.variableName;
+    
+    switch (operation) {
+      case 'set':
+        // Convert string values to numbers when possible
+        const setValue = this.resolveValue(config.value);
+        this.variables[variableName] = setValue;
+        break;
+      case 'increment':
+        if (!(variableName in this.variables)) {
+          this.variables[variableName] = 0;
+        } else {
+          // Ensure the current value is a number
+          const currentValue = this.resolveValue(this.variables[variableName]);
+          this.variables[variableName] = currentValue + 1;
+        }
+        break;
+      case 'decrement':
+        if (!(variableName in this.variables)) {
+          this.variables[variableName] = 0;
+        } else {
+          // Ensure the current value is a number
+          const currentValue = this.resolveValue(this.variables[variableName]);
+          this.variables[variableName] = currentValue - 1;
+        }
+        break;
+      default:
+        throw new Error(`Unknown variable operation: ${operation}`);
+    }
+    
+    logger.info(`Variable ${variableName} = ${this.variables[variableName]} (operation: ${operation})`);
+    return this.variables[variableName];
+  }
+
+  executeArithmeticNode(node) {
+    const { config } = node.data;
+    const v1 = this.resolveValue(config.value1);
+    const v2 = this.resolveValue(config.value2);
+    let result;
+    switch (config.operation) {
+      case 'add': result = v1 + v2; break;
+      case 'subtract': result = v1 - v2; break;
+      case 'multiply': result = v1 * v2; break;
+      case 'divide': result = v2 !== 0 ? v1 / v2 : null; break;
+      default: throw new Error('Unknown arithmetic operation');
+    }
+    if (config.outputVariable) this.variables[config.outputVariable] = result;
+    return result;
+  }
+
+  executeConditionalNode(node) {
+    const { config } = node.data;
+    const v1 = this.resolveValue(config.value1);
+    const v2 = this.resolveValue(config.value2);
+    let result;
+    switch (config.operator) {
+      case 'equals': result = v1 === v2; break;
+      case 'not_equals': result = v1 !== v2; break;
+      case 'greater': result = v1 > v2; break;
+      case 'less': result = v1 < v2; break;
+      default: throw new Error('Unknown conditional operator');
+    }
+    if (config.outputVariable) this.variables[config.outputVariable] = result;
+    return result;
+  }
+
+  async executeTimerNode(node, nodeMap, edges, visited) {
+    const { config } = node.data;
+    const timerType = config.timerType || 'delay';
+    const duration = Number(config.duration) || 0;
+    const unit = config.unit || 'ms';
+    const repeatCount = config.repeatCount || -1;
+    
+    // Convert duration to milliseconds
+    let durationMs = duration;
+    if (unit === 's') durationMs = duration * 1000;
+    else if (unit === 'm') durationMs = duration * 60 * 1000;
+    
+    logger.info(`Timer node: type=${timerType}, duration=${duration}${unit}, repeatCount=${repeatCount}, maxCount=${repeatCount > 0 ? repeatCount : 'Infinity'}`);
+    
+    switch (timerType) {
+      case 'delay':
+        if (durationMs > 0) {
+          await new Promise(res => setTimeout(res, durationMs));
+        }
+        break;
+        
+      case 'interval':
+        if (durationMs > 0) {
+          let count = 0;
+          const maxCount = repeatCount > 0 ? repeatCount : Infinity;
+          
+          while (count < maxCount && !this.shouldStop) {
+            count++;
+            logger.info(`Interval execution ${count}/${maxCount === Infinity ? '∞' : maxCount} (repeatCount=${repeatCount}, maxCount=${maxCount})`);
+            
+            // Execute connected logic during each interval
+            const nextEdges = edges.filter(e => e.source === node.id);
+            for (const edge of nextEdges) {
+              const nextNode = nodeMap[edge.target];
+              if (nextNode) {
+                await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, true);
+              }
+            }
+            
+            // Check if we should stop after executing logic
+            if (this.shouldStop) {
+              logger.info(`Stopping interval execution due to stop condition`);
+              break;
+            }
+            
+            if (count < maxCount) {
+              await new Promise(res => setTimeout(res, durationMs));
+            }
+          }
+        }
+        break;
+        
+      case 'timeout':
+        if (durationMs > 0) {
+          await new Promise(res => setTimeout(res, durationMs));
+          logger.info(`Timeout completed after ${duration}${unit}`);
+        }
+        break;
+        
+      default:
+        throw new Error(`Unknown timer type: ${timerType}`);
+    }
+    
+    if (config.outputVariable) {
+      this.variables[config.outputVariable] = durationMs;
+    }
+    
+    return durationMs;
   }
 
   async executeBlockchainNode(node) {
-    if (!this.executionContext.blockchainState?.seiAgentKit) {
-      throw new Error('SeiAgentKit not initialized. Please provide a private key.');
+    // Stub for now
+    logger.info('Blockchain node execution is not implemented yet.');
+    return null;
+  }
+
+  resolveValue(val) {
+    if (typeof val === 'string' && val in this.variables) {
+      return this.variables[val];
     }
-    
-    const seiAgent = this.executionContext.blockchainState.seiAgentKit;
-    const config = node.data.config || {};
-    
-    logger.info(`Executing blockchain operation: ${config.operation}`);
-    
-    switch (config.operation) {
-      case 'balance':
-        return await seiAgent.getERC20Balance(config.tokenAddress);
-      
-      case 'transfer':
-        if (!config.amount || !config.recipientAddress) {
-          throw new Error('Transfer requires amount and recipient address');
-        }
-        return await seiAgent.ERC20Transfer(
-          config.amount, 
-          config.recipientAddress, 
-          config.tokenAddress
-        );
-      
-      case 'swap':
-        if (!config.amount || !config.fromToken || !config.toToken) {
-          throw new Error('Swap requires amount, fromToken, and toToken');
-        }
-        return await seiAgent.swap(
-          config.amount,
-          config.fromToken,
-          config.toToken
-        );
-      
-      case 'stake':
-        if (!config.amount) {
-          throw new Error('Stake requires amount');
-        }
-        return await seiAgent.stake(config.amount);
-      
-      case 'borrow':
-        if (!config.amount || !config.tokenTicker) {
-          throw new Error('Borrow requires amount and token ticker');
-        }
-        return await seiAgent.borrowTakara(config.tokenTicker, config.amount);
-      
-      case 'lend':
-        if (!config.amount || !config.tokenTicker) {
-          throw new Error('Lend requires amount and token ticker');
-        }
-        return await seiAgent.mintTakara(config.tokenTicker, config.amount);
-      
-      default:
-        throw new Error(`Unknown blockchain operation: ${config.operation}`);
+    if (typeof val === 'number') {
+      return val;
     }
+    // Try to convert to number, but handle the case where Number("0") returns 0
+    const numVal = Number(val);
+    return isNaN(numVal) ? val : numVal;
   }
-
-  async executeAIAgentNode(node) {
-    const { prompt, model, temperature } = node.data.config || {};
-    
-    logger.info('AI Agent execution:', { prompt, model, temperature });
-    
-    // TODO: Implement LangChain integration
-    // For now, return a placeholder response
-    return {
-      message: 'AI Agent execution not yet implemented',
-      prompt,
-      model: model || 'gpt-4',
-      temperature: temperature || 0.7
-    };
-  }
-
-  async executeAPICallNode(node) {
-    const { method, url, headers, body } = node.data.config || {};
-    
-    logger.info('API Call execution:', { method, url });
-    
-    try {
-      const response = await fetch(url, {
-        method: method || 'GET',
-        headers: headers || {},
-        body: body ? JSON.stringify(body) : undefined
-      });
-      
-      const data = await response.json();
-      
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        data,
-        headers: Object.fromEntries(response.headers.entries())
-      };
-    } catch (error) {
-      throw new Error(`API call failed: ${error.message}`);
-    }
-  }
-
-  async executeDatabaseNode(node) {
-    const { operation, query, params } = node.data.config || {};
-    
-    logger.info('Database execution:', { operation, query });
-    
-    // TODO: Implement database client
-    // For now, return a placeholder response
-    return {
-      message: 'Database execution not yet implemented',
-      operation,
-      query,
-      params
-    };
-  }
-
-  // Helper methods
-  resolveValue(value) {
-    if (typeof value === 'string' && value.startsWith('${') && value.endsWith('}')) {
-      const varName = value.slice(2, -1);
-      return this.executionContext.variables.get(varName);
-    }
-    return value;
-  }
-
-  getExecutionContext() {
-    return {
-      variables: Object.fromEntries(this.executionContext.variables),
-      nodeResults: Object.fromEntries(this.executionContext.nodeResults),
-      executionStatus: Object.fromEntries(this.executionContext.executionStatus),
-      flowMetadata: this.executionContext.flowMetadata
-    };
-  }
-
-  clearContext() {
-    this.executionContext.variables.clear();
-    this.executionContext.nodeResults.clear();
-    this.executionContext.executionStatus.clear();
-    this.executionContext.flowMetadata = {
-      startTime: new Date(),
-      currentNode: null,
-      executionPath: []
-    };
-  }
-}
-
-export default BackendFlowExecutor; 
+} 
