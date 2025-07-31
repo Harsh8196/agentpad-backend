@@ -1,7 +1,17 @@
 import { logger } from '../utils/logger.js';
+import { EnhancedSeiAgentKit } from './enhancedSeiAgentKit.js';
+import { createSeiTools } from "../../external/sei-agent-kit/src/langchain/index.ts";
+import LLMNode from './llmNode.js';
 
 export class BackendFlowExecutor {
-  constructor() {
+  constructor(privateKey, provider) {
+    this.privateKey = privateKey;
+    this.provider = provider;
+    
+    // Create mainnet SeiAgentKit for LLM tools (always mainnet)
+    this.mainnetSeiKit = new EnhancedSeiAgentKit(privateKey, provider, 'mainnet');
+    this.tools = createSeiTools(this.mainnetSeiKit);
+    
     this.variables = {};
     this.nodeResults = {};
     this.shouldStop = false;
@@ -84,7 +94,7 @@ export class BackendFlowExecutor {
   async executeNode(node, nodeMap, edges, visited) {
     switch (node.type) {
       case 'start':
-        return null;
+        return this.executeStartNode(node);
       case 'variable':
         return this.executeVariableNode(node);
       case 'arithmetic':
@@ -95,6 +105,8 @@ export class BackendFlowExecutor {
         return this.executeTimerNode(node, nodeMap, edges, visited);
       case 'blockchain':
         return this.executeBlockchainNode(node);
+      case 'llm':
+        return this.executeLLMNode(node);
       default:
         throw new Error(`Unknown node type: ${node.type}`);
     }
@@ -112,6 +124,12 @@ export class BackendFlowExecutor {
         // Convert string values to numbers when possible
         const setValue = this.resolveValue(config.value);
         this.variables[variableName] = setValue;
+        break;
+      case 'get':
+        // Just retrieve the variable value (no modification)
+        if (!(variableName in this.variables)) {
+          this.variables[variableName] = undefined;
+        }
         break;
       case 'increment':
         if (!(variableName in this.variables)) {
@@ -229,7 +247,7 @@ export class BackendFlowExecutor {
           logger.info(`Timeout completed after ${duration}${unit}`);
         }
         break;
-        
+      
       default:
         throw new Error(`Unknown timer type: ${timerType}`);
     }
@@ -241,10 +259,112 @@ export class BackendFlowExecutor {
     return durationMs;
   }
 
-  async executeBlockchainNode(node) {
-    // Stub for now
-    logger.info('Blockchain node execution is not implemented yet.');
+  async executeStartNode(node) {
+    const { config } = node.data;
+    if (config && config.variables) {
+      // Initialize variables from start node
+      for (const variable of config.variables) {
+        this.variables[variable.name] = variable.defaultValue;
+      }
+      logger.info(`Initialized ${config.variables.length} variables from start node`);
+    }
     return null;
+  }
+
+  async executeBlockchainNode(node) {
+    logger.info(`Executing blockchain node: ${node.id}`);
+    
+    const config = node.data.config;
+    const network = config.network || 'mainnet';
+    const selectedTool = config.selectedTool;
+    const parameters = config.toolParameters || {};
+    
+    if (!selectedTool) {
+      throw new Error('No blockchain operation selected');
+    }
+    
+    // Create SeiAgentKit for the specific network
+    const seiKit = new EnhancedSeiAgentKit(this.privateKey, this.provider, network);
+    
+    try {
+      const result = await this.executeSeiAgentKitMethod(seiKit, selectedTool, parameters);
+      
+      if (config.outputVariable) {
+        this.variables[config.outputVariable] = result;
+      }
+      
+      this.nodeResults[node.id] = result;
+      
+      logger.info(`Blockchain operation ${selectedTool} completed on ${network}:`, result);
+      return result;
+      
+    } catch (error) {
+      logger.error(`Error executing blockchain operation ${selectedTool} on ${network}:`, error);
+      throw error;
+    }
+  }
+
+  async executeSeiAgentKitMethod(seiKit, toolName, parameters) {
+    const methodMap = {
+      'sei_erc20_balance': () => seiKit.getERC20Balance(parameters.contract_address),
+      'sei_erc20_transfer': () => seiKit.ERC20Transfer(
+        parameters.amount, 
+        parameters.recipient, 
+        parameters.ticker
+      ),
+      'sei_native_transfer': () => seiKit.ERC20Transfer(
+        parameters.amount,
+        parameters.recipient
+      ),
+      'sei_swap': () => seiKit.swap(
+        parameters.amount,
+        parameters.tokenIn,
+        parameters.tokenOut
+      ),
+      'sei_stake': () => seiKit.stake(parameters.amount),
+      'sei_borrow_takara': () => seiKit.borrowTakara(
+        parameters.ticker,
+        parameters.borrowAmount
+      ),
+      'sei_repay_takara': () => seiKit.repayTakara(
+        parameters.ticker,
+        parameters.repayAmount
+      ),
+      'sei_citrex_place_order': () => seiKit.citrexPlaceOrder(parameters.orderArgs),
+      'sei_post_tweet': () => seiKit.postTweet(parameters.tweet),
+    };
+    
+    const method = methodMap[toolName];
+    if (!method) {
+      throw new Error(`Tool ${toolName} not supported`);
+    }
+    
+    return await method();
+  }
+
+  async executeLLMNode(node) {
+    logger.info(`Executing LLM node: ${node.id}`);
+    
+    const llmNode = new LLMNode(
+      node.data.config,
+      this.privateKey,
+      this.provider,
+      this.tools // Always use mainnet tools for LLM
+    );
+    
+    const context = {
+      variables: this.variables,
+      nodeResults: this.nodeResults,
+      currentNode: node.id
+    };
+    
+    const result = await llmNode.execute(
+      node.data.config.input || "Analyze current workflow state",
+      context
+    );
+    
+    this.nodeResults[node.id] = result;
+    return result;
   }
 
   resolveValue(val) {

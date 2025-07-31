@@ -1,202 +1,318 @@
 # AgentPad Backend
 
-Standalone execution engine for AgentPad flows.
-
-## 🏗️ Architecture
-
-This is the **standalone backend executor** for AgentPad, designed to run independently from the frontend. It can be deployed as:
-
-- **CLI Tool** - Run flows locally
-- **Docker Container** - Deploy anywhere
-- **Cloud Service** - Deploy to cloud platforms
+A Node.js-based flow execution engine for AI agent workflows on the SEI blockchain.
 
 ## 🚀 Features
 
-- **Flow Execution Engine** - Execute flows built in the frontend
-- **Blockchain Integration** - SEI blockchain operations via sei-agent-kit
-- **AI Agent Support** - OpenAI, Anthropic, Google AI integration
-- **API Operations** - HTTP requests and data processing
-- **Database Operations** - SQL and NoSQL database support
-- **Environment Management** - Secure private key handling
+- **Network-Aware Blockchain Operations**: Support for mainnet, testnet, and devnet
+- **LLM Integration**: AI-powered decision making with LangChain
+- **Variable Management**: Dynamic variable handling across nodes
+- **Timer Operations**: Delay, interval, and timeout functionality
+- **Conditional Logic**: Branching based on conditions
+- **Arithmetic Operations**: Mathematical calculations
+- **Real-time Logging**: Comprehensive execution logging
 
-## 📁 Structure
-
-```
-AgentPad-Backend/
-├── src/
-│   ├── flowExecutor.js      # Main execution engine
-│   ├── cli.js               # CLI tool entry point
-│   ├── server.js            # HTTP server for API
-│   └── utils/               # Execution utilities
-│       ├── blockchain.js    # Blockchain operations
-│       ├── ai.js            # AI agent operations
-│       ├── api.js           # API call operations
-│       └── database.js      # Database operations
-├── external/
-│   └── sei-agent-kit/       # SEI blockchain integration
-├── Dockerfile               # Docker configuration
-├── docker-compose.yml       # Docker compose setup
-└── package.json             # Dependencies
-```
-
-## 🛠️ Setup
-
-### Prerequisites
+## 📋 Prerequisites
 
 - Node.js 18+
-- npm or yarn
+- SEI private key
+- OpenAI API key (for LLM nodes)
 
-### Installation
+## 🛠️ Installation
 
+1. **Install Dependencies**:
 ```bash
-# Clone the repository
-git clone <backend-repo-url>
-cd AgentPad-Backend
-
-# Install dependencies
 npm install
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your configuration
 ```
 
-### Environment Variables
-
+2. **Environment Setup**:
 ```bash
-# Blockchain Configuration
-SEI_PRIVATE_KEY=your-private-key
-SEI_RPC_URL=https://sei-rpc-url
-
-# AI Configuration
-OPENAI_API_KEY=your-openai-key
-ANTHROPIC_API_KEY=your-anthropic-key
-GOOGLE_AI_KEY=your-google-key
-
-# Database Configuration
-DATABASE_URL=your-database-url
-
-# Server Configuration
-PORT=3001
-NODE_ENV=development
-```
-
-## 🚀 Usage
-
-### CLI Tool
-
+   cp env.example .env
+   ```
+   
+   Edit `.env` with your configuration:
 ```bash
-# Execute a flow from JSON file
-node src/cli.js execute flow.json
+   SEI_PRIVATE_KEY=your_private_key_here
+   OPENAI_API_KEY=your_openai_api_key_here
+   ```
 
-# Execute with custom environment
-node src/cli.js execute flow.json --env production
-```
+## 🎯 Usage
 
-### Docker
-
+### Basic Flow Execution
 ```bash
-# Build the image
-docker build -t agentpad-backend .
-
-# Run the container
-docker run -p 3001:3001 agentpad-backend
-
-# With environment variables
-docker run -p 3001:3001 \
-  -e SEI_PRIVATE_KEY=your-key \
-  -e OPENAI_API_KEY=your-key \
-  agentpad-backend
+node src/index.js flow.json
 ```
 
-### HTTP API
-
+### Network-Specific Execution
 ```bash
-# Start the server
-npm start
+# Mainnet (default)
+node src/index.js flow.json mainnet
 
-# Execute flow via API
-curl -X POST http://localhost:3001/api/execute \
-  -H "Content-Type: application/json" \
-  -d @flow.json
+# Testnet
+node src/index.js flow.json testnet
+
+# Devnet
+node src/index.js flow.json devnet
 ```
 
-## 🔧 Development
+## 🔗 Supported Blockchain Operations
 
-```bash
-# Install dependencies
-npm install
+### Basic Operations (All Networks)
+- `sei_erc20_balance` - Get token balance
+- `sei_erc20_transfer` - Transfer ERC-20 tokens
+- `sei_native_transfer` - Transfer native SEI
+- `sei_erc721_balance` - Get NFT balance
+- `sei_erc721_transfer` - Transfer NFTs
+- `sei_erc721_mint` - Mint NFTs
 
-# Run in development mode
-npm run dev
+### DeFi Operations (Mainnet Only)
+- `sei_swap` - Token swapping via Symphony
+- `sei_stake` - Stake SEI tokens
+- `sei_unstake` - Unstake SEI tokens
+- `sei_mint_takara` - Mint tTokens
+- `sei_borrow_takara` - Borrow from Takara
+- `sei_repay_takara` - Repay to Takara
+- `sei_redeem_takara` - Redeem from Takara
 
-# Run tests
-npm test
+### Trading Operations (Mainnet Only)
+- `sei_citrex_place_order` - Place trading orders
+- `sei_citrex_get_balance` - Get trading balance
+- `sei_citrex_get_products` - Get available products
+- `sei_citrex_get_order_book` - Get order book data
 
-# Build for production
-npm run build
-```
+### Social Operations (Mainnet Only)
+- `sei_post_tweet` - Post tweets
+- `sei_get_account_details` - Get account details
 
-## 📦 Deployment
+## 📊 Node Types
 
-### Docker Deployment
-
-```bash
-# Build image
-docker build -t agentpad-backend .
-
-# Run with docker-compose
-docker-compose up -d
-```
-
-### Cloud Deployment
-
-The backend can be deployed to:
-- **AWS Lambda** - Serverless execution
-- **Google Cloud Run** - Containerized deployment
-- **Azure Container Instances** - Cloud containers
-- **DigitalOcean App Platform** - Managed containers
-
-## 🔒 Security
-
-- **Private Keys** - Stored in environment variables
-- **No Frontend Dependencies** - Completely isolated
-- **Secure Execution** - Sandboxed flow execution
-- **Environment Isolation** - Separate configs per environment
-
-## 📚 API Reference
-
-### Execute Flow
-
-```http
-POST /api/execute
-Content-Type: application/json
-
-{
-  "flow": {
-    "nodes": [...],
-    "edges": [...]
-  },
-  "environment": {
-    "variables": {...}
+### Start Node
+- **Purpose**: Flow entry point and variable initialization
+- **Configuration**: 
+  ```json
+  {
+    "variables": [
+      {
+        "name": "myVariable",
+        "type": "string",
+        "defaultValue": "initial value",
+        "description": "Variable description"
+      }
+    ]
   }
+  ```
+
+### Blockchain Node
+- **Purpose**: Execute SEI blockchain operations
+- **Configuration**:
+  ```json
+  {
+    "network": "mainnet|testnet|devnet",
+    "selectedTool": "sei_erc20_balance",
+    "toolParameters": {
+      "ticker": "SEI"
+    },
+    "outputVariable": "result"
+  }
+  ```
+
+### LLM Node
+- **Purpose**: AI-powered analysis and decision making
+- **Configuration**:
+  ```json
+  {
+    "prompt": "Analyze the current state and suggest actions",
+    "input": "Current workflow state",
+    "outputVariable": "aiAnalysis",
+    "chatInterface": false,
+    "model": "gpt-4-turbo"
+  }
+  ```
+
+### Timer Node
+- **Purpose**: Add delays or intervals
+- **Configuration**:
+  ```json
+  {
+    "timerType": "delay|interval|timeout",
+    "duration": 60,
+    "unit": "s|m|ms",
+    "repeatCount": 3,
+    "outputVariable": "timerResult"
+  }
+  ```
+
+### Conditional Node
+- **Purpose**: Make decisions based on conditions
+- **Configuration**:
+  ```json
+  {
+    "value1": "variable1",
+    "operator": "equals|not_equals|greater|less",
+    "value2": "variable2",
+    "outputVariable": "conditionResult"
+  }
+  ```
+
+### Arithmetic Node
+- **Purpose**: Perform mathematical operations
+- **Configuration**:
+  ```json
+  {
+    "value1": "variable1",
+    "operator": "add|subtract|multiply|divide",
+    "value2": "variable2",
+    "outputVariable": "calculationResult"
+  }
+  ```
+
+### Variable Node
+- **Purpose**: Set, get, or modify variables
+- **Configuration**:
+  ```json
+  {
+    "variableName": "myVariable",
+    "operation": "set|increment|decrement",
+    "value": "newValue",
+    "outputVariable": "operationResult"
+  }
+  ```
+
+## 🔧 Architecture
+
+### EnhancedSeiAgentKit
+A wrapper around the original `sei-agent-kit` that adds network selection capabilities:
+
+- **Network Support**: Mainnet, testnet, devnet
+- **Tool Validation**: Ensures operations are supported on selected network
+- **Dynamic RPC**: Automatically configures RPC endpoints
+- **Warning System**: Alerts for non-mainnet DeFi operations
+
+### Flow Executor
+The core execution engine that:
+
+- **Recursive Execution**: Traverses flow nodes recursively
+- **Variable Resolution**: Handles variable references and constants
+- **Network Management**: Creates network-specific SeiAgentKit instances
+- **Error Handling**: Comprehensive error logging and recovery
+
+## 📝 Example Flows
+
+### Basic Token Operations (Testnet)
+```json
+{
+  "name": "Basic Token Operations",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "data": {
+        "config": {
+          "variables": [
+            { "name": "balance", "type": "string", "defaultValue": "" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "blockchain-1",
+      "type": "blockchain",
+      "data": {
+        "config": {
+          "network": "testnet",
+          "selectedTool": "sei_erc20_balance",
+          "toolParameters": { "ticker": "SEI" },
+          "outputVariable": "balance"
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "source": "start-1", "target": "blockchain-1" }
+  ]
 }
 ```
 
-### Health Check
-
-```http
-GET /api/health
+### DeFi Operations (Mainnet)
+```json
+{
+  "name": "DeFi Operations",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "data": { "config": { "variables": [] } }
+    },
+    {
+      "id": "blockchain-1",
+      "type": "blockchain",
+      "data": {
+        "config": {
+          "network": "mainnet",
+          "selectedTool": "sei_swap",
+          "toolParameters": {
+            "amount": "10",
+            "tokenIn": "0x...",
+            "tokenOut": "0x..."
+          }
+        }
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "data": {
+        "config": {
+          "prompt": "Analyze the swap result and suggest next actions",
+          "outputVariable": "analysis"
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "source": "start-1", "target": "blockchain-1" },
+    { "source": "blockchain-1", "target": "llm-1" }
+  ]
+}
 ```
 
-## 🤝 Contributing
+## 🐛 Troubleshooting
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+### Common Issues
+
+1. **Memory Issues**: If you encounter memory problems during build:
+   ```bash
+   node --max-old-space-size=8192 ./node_modules/.bin/tsc
+   ```
+
+2. **Network Connection**: Ensure your RPC endpoints are accessible
+
+3. **Private Key**: Verify your SEI private key is correct and has sufficient balance
+
+4. **API Keys**: Check that your OpenAI API key is valid
+
+### Logging
+
+The system uses Winston for logging. Set `LOG_LEVEL` in your `.env` file:
+- `error`: Only errors
+- `warn`: Warnings and errors
+- `info`: General information (default)
+- `debug`: Detailed debugging information
+
+## 🔄 Development
+
+### Adding New Blockchain Operations
+
+1. **Update Tool Mapping**: Add to `TOOL_NETWORK_SUPPORT` in `enhancedSeiAgentKit.js`
+2. **Add Method**: Implement in `executeSeiAgentKitMethod` in `flowExecutor.js`
+3. **Test**: Create test flows to verify functionality
+
+### Adding New Node Types
+
+1. **Add Case**: Add to `executeNode` switch statement in `flowExecutor.js`
+2. **Implement Method**: Create execution method for the new node type
+3. **Update Frontend**: Add corresponding frontend components
 
 ## 📄 License
 
-MIT License - see LICENSE file for details. 
+This project is part of AgentPad and follows the same licensing terms. 

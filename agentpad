@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+
+// Simple wrapper script for AgentPad CLI
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const cliPath = path.join(__dirname, 'bin', 'agentpad.js');
+
+// Forward all arguments to the CLI
+const args = process.argv.slice(2);
+const child = spawn('node', ['--loader', 'tsx', cliPath, ...args], {
+  stdio: 'inherit',
+  cwd: __dirname
+});
+
+child.on('exit', (code) => {
+  process.exit(code);
+}); 
