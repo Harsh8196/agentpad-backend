@@ -4,96 +4,100 @@ A powerful command-line interface for managing and executing AI agent workflows 
 
 ## Quick Start
 
-### Using the batch file (Windows)
+### Using npm commands (RECOMMENDED)
 ```bash
 # List available flows
-.\agentpad.bat list
+npm run agentpad list
 
-# Start a flow
-.\agentpad.bat start test-flow --network testnet
+# Start a single flow
+npm run agentpad start flow1
+
+# Start multiple flows
+npm run agentpad start flow1 flow2
 
 # Validate a flow
-.\agentpad.bat validate test-flow
+npm run agentpad validate flow1
 
 # Show status
-.\agentpad.bat status
+npm run agentpad status
 ```
 
 ### Using npx directly
 ```bash
 # List available flows
-npx tsx bin/agentpad.js list
+npx --no-install tsx --no-warnings bin/agentpad.js list
 
-# Start a flow
-npx tsx bin/agentpad.js start test-flow --network testnet
+# Start a single flow
+npx --no-install tsx --no-warnings bin/agentpad.js start flow1
+
+# Start multiple flows
+npx --no-install tsx --no-warnings bin/agentpad.js start flow1 flow2
 
 # Validate a flow
-npx tsx bin/agentpad.js validate test-flow
+npx --no-install tsx --no-warnings bin/agentpad.js validate flow1
 
 # Show status
-npx tsx bin/agentpad.js status
+npx --no-install tsx --no-warnings bin/agentpad.js status
 ```
 
 ## Commands
 
 ### `start` - Execute a flow
 ```bash
-agentpad start <flow> [options]
+agentpad start <flows...> [options]
 ```
 
 **Arguments:**
-- `<flow>` - Flow file path or flow name (without .json extension)
+- `<flows...>` - Flow file paths or flow names (can specify multiple)
 
 **Options:**
-- `-n, --network <network>` - Network to use (mainnet, testnet, devnet) [default: mainnet]
-- `-w, --watch` - Watch for changes and restart automatically
 - `-d, --daemon` - Run as daemon process
+- `-w, --watch` - Watch for changes and restart automatically
 
 **Examples:**
 ```bash
-# Start a flow on mainnet
-agentpad start my-flow
+# Start a single flow
+npm run agentpad start flow1
 
-# Start a flow on testnet
-agentpad start my-flow --network testnet
+# Start multiple flows
+npm run agentpad start flow1 flow2 flow3
 
 # Start a flow as daemon
-agentpad start my-flow --daemon
+npm run agentpad start flow1 --daemon
 ```
 
 ### `stop` - Stop running flows
 ```bash
-agentpad stop [options]
+agentpad stop [flow]
 ```
 
-**Options:**
-- `-a, --all` - Stop all running flows
-- `-f, --flow <name>` - Stop specific flow by name
+**Arguments:**
+- `[flow]` - Flow name to stop (optional, stops all if not specified)
 
 **Examples:**
 ```bash
 # Stop all flows
-agentpad stop --all
+npm run agentpad stop
 
 # Stop specific flow
-agentpad stop --flow my-flow
+npm run agentpad stop flow1
 ```
 
 ### `list` - List available flows
 ```bash
-agentpad list [options]
+agentpad list [type]
 ```
 
-**Options:**
-- `-r, --running` - Show only running flows
+**Arguments:**
+- `[type]` - Type to list: "running" for running flows only
 
 **Examples:**
 ```bash
 # List all flows
-agentpad list
+npm run agentpad list
 
 # List only running flows
-agentpad list --running
+npm run agentpad list running
 ```
 
 ### `status` - Show flow status
@@ -107,10 +111,10 @@ agentpad status [flow]
 **Examples:**
 ```bash
 # Show status of all flows
-agentpad status
+npm run agentpad status
 
 # Show status of specific flow
-agentpad status my-flow
+npm run agentpad status flow1
 ```
 
 ### `validate` - Validate a flow without executing
@@ -124,7 +128,18 @@ agentpad validate <flow>
 **Examples:**
 ```bash
 # Validate a flow
-agentpad validate my-flow
+npm run agentpad validate flow1
+```
+
+## Multiple Flow Execution
+
+The CLI supports running multiple flows simultaneously by simply listing them:
+
+```bash
+# Start multiple flows at once
+npm run agentpad start flow1 flow2 flow3
+
+# This will execute all flows in parallel and show results
 ```
 
 ## Flow Management
@@ -172,17 +187,23 @@ Each flow should have:
 ### Optional
 - `OPENAI_API_KEY` - OpenAI API key for LLM operations
 
-## Networks
+## Network Selection
 
-### Supported Networks
+Network selection is handled within individual blockchain nodes in your flows, not at the CLI level. Each blockchain node can be configured to use:
 - `mainnet` - SEI mainnet
-- `testnet` - SEI testnet  
-- `devnet` - SEI devnet
+- `testnet` - SEI testnet
 
-### Network-Specific Features
-- **Mainnet**: All operations available
-- **Testnet**: Basic operations (ERC-20 transfer, native SEI transfer)
-- **Devnet**: Basic operations only
+This allows different nodes in the same flow to use different networks as needed.
+
+## Performance Optimization
+
+### Fast Startup
+The CLI uses `tsx` for fast TypeScript execution without compilation step.
+
+### Multiple Flow Execution
+- Flows run in parallel for maximum efficiency
+- Each flow has its own isolated execution context
+- Progress tracking for each flow independently
 
 ## Error Handling
 
@@ -196,62 +217,24 @@ The CLI provides detailed error messages and logging:
 
 ### Complete Workflow Example
 
-1. **Create a flow file** (`flows/my-workflow.json`):
-```json
-{
-  "name": "My Workflow",
-  "nodes": [
-    {
-      "id": "start-node",
-      "data": {
-        "type": "start",
-        "config": {
-          "variables": [
-            {
-              "name": "balance",
-              "type": "string"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "blockchain-node",
-      "data": {
-        "type": "blockchain",
-        "config": {
-          "network": "testnet",
-          "selectedTool": "sei_erc20_balance",
-          "outputVariable": "balance",
-          "toolParameters": {
-            "ticker": "SEI"
-          }
-        }
-      }
-    }
-  ],
-  "edges": [
-    {
-      "source": "start-node",
-      "target": "blockchain-node"
-    }
-  ]
-}
+1. **Create flow files** in `flows/` directory:
+   - `flows/my-workflow.json`
+   - `flows/another-workflow.json`
+
+2. **Validate flows**:
+```bash
+npm run agentpad validate my-workflow
+npm run agentpad validate another-workflow
 ```
 
-2. **Validate the flow**:
+3. **Start multiple flows**:
 ```bash
-agentpad validate my-workflow
-```
-
-3. **Start the flow**:
-```bash
-agentpad start my-workflow --network testnet
+npm run agentpad start my-workflow another-workflow
 ```
 
 4. **Check status**:
 ```bash
-agentpad status my-workflow
+npm run agentpad status
 ```
 
 ## Troubleshooting
@@ -265,22 +248,23 @@ agentpad status my-workflow
    - Ensure the flow file exists in the `flows/` directory
    - Check the flow name (without .json extension)
 
-3. **"Invalid network"**
-   - Use one of: mainnet, testnet, devnet
-
-4. **"Flow validation failed"**
+3. **"Flow validation failed"**
    - Check that the flow has required fields (nodes, edges, start node)
    - Ensure all nodes have proper configuration
+
+4. **Slow startup**
+   - Use `npm run agentpad` for fastest execution
+   - The command uses `--no-install` and `--no-warnings` for faster startup
 
 ### Getting Help
 ```bash
 # Show help
-agentpad --help
+npm run agentpad --help
 
 # Show command help
-agentpad start --help
-agentpad stop --help
-agentpad list --help
-agentpad status --help
-agentpad validate --help
+npm run agentpad start --help
+npm run agentpad stop --help
+npm run agentpad list --help
+npm run agentpad status --help
+npm run agentpad validate --help
 ``` 

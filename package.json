@@ -7,25 +7,25 @@
   "scripts": {
     "dev": "nodemon --exec tsx src/index.js",
     "start": "tsx src/index.js",
-    "agentpad": "tsx bin/agentpad.js",
+    "agentpad": "npx --no-install tsx --no-warnings bin/agentpad.js",
+    "webhook": "node manage-webhook.js",
+    "webhook-setup": "node setup-webhook.js",
     "build": "echo 'No build step required for Node.js'",
     "test": "jest",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "db:migrate": "node src/database/migrate.js",
-    "db:seed": "node src/database/seed.js",
-    "db:reset": "npm run db:migrate && npm run db:seed"
+    "lint": "eslint src/"
   },
   "dependencies": {
     "@langchain/core": "^0.3.66",
-    "@langchain/openai": "^0.6.3",
+    "@langchain/langgraph": "^0.4.2",
+    "@langchain/openai": "0.5.18",
     "axios": "^1.6.0",
     "commander": "^14.0.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "langchain": "^0.3.30",
+    "sei-agent-kit": "^0.0.7",
     "tsx": "^4.20.3",
-    "viem": "^2.33.1",
+    "viem": "^2.33.3",
     "winston": "^3.11.0"
   },
   "devDependencies": {

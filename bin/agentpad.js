@@ -6,6 +6,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { logger } from '../src/utils/logger.js';
 import { BackendFlowExecutor } from '../src/services/flowExecutor.js';
+import { FlowTracker } from '../src/services/flowTracker.js';
 
 // Load environment variables
 dotenv.config();
@@ -21,13 +22,16 @@ program
 program
   .command('start')
   .description('Start executing a flow')
-  .argument('<flow>', 'Flow file path or flow name')
-  .option('-n, --network <network>', 'Network to use (mainnet, testnet, devnet)', 'mainnet')
+  .argument('<flows...>', 'Flow file paths or flow names (can specify multiple)')
   .option('-w, --watch', 'Watch for changes and restart automatically')
   .option('-d, --daemon', 'Run as daemon process')
-  .action(async (flow, options) => {
+  .action(async (flows, options) => {
     try {
-      await startFlow(flow, options);
+      if (flows.length === 1) {
+        await startFlow(flows[0], options);
+      } else {
+        await startMultipleFlows(flows.join(','), options);
+      }
     } catch (error) {
       logger.error('Failed to start flow:', error);
       process.exit(1);
@@ -38,11 +42,10 @@ program
 program
   .command('stop')
   .description('Stop running flows')
-  .option('-a, --all', 'Stop all running flows')
-  .option('-f, --flow <name>', 'Stop specific flow by name')
-  .action(async (options) => {
+  .argument('[flow]', 'Flow name to stop (optional, stops all if not specified)')
+  .action(async (flow) => {
     try {
-      await stopFlows(options);
+      await stopFlows(flow);
     } catch (error) {
       logger.error('Failed to stop flows:', error);
       process.exit(1);
@@ -53,10 +56,10 @@ program
 program
   .command('list')
   .description('List available flows')
-  .option('-r, --running', 'Show only running flows')
-  .action(async (options) => {
+  .argument('[type]', 'Type to list: "running" for running flows only')
+  .action(async (type) => {
     try {
-      await listFlows(options);
+      await listFlows(type);
     } catch (error) {
       logger.error('Failed to list flows:', error);
       process.exit(1);
@@ -93,19 +96,70 @@ program
 
 // Global state for running flows
 const runningFlows = new Map();
+const flowTracker = new FlowTracker();
+
+// Cleanup function for graceful shutdown
+function cleanup() {
+  logger.info('Shutting down...');
+  
+  // Stop all running flows
+  for (const [flowName, flowInfo] of runningFlows) {
+    if (flowInfo.executor && flowInfo.executor.webhookHandler) {
+      flowInfo.executor.webhookHandler.stop();
+    }
+  }
+  
+  // Stop flow tracker
+  flowTracker.stopAllFlows();
+  
+  process.exit(0);
+}
+
+// Handle process termination signals
+process.on('SIGINT', cleanup);
+process.on('SIGTERM', cleanup);
+
+async function startMultipleFlows(flowsString, options) {
+  const flows = flowsString.split(',').map(f => f.trim()).filter(f => f);
+  
+  if (flows.length === 0) {
+    logger.error('No valid flows specified');
+    process.exit(1);
+  }
+
+  logger.info(`Starting ${flows.length} flows: ${flows.join(', ')}`);
+  
+  const promises = flows.map(async (flow) => {
+    try {
+      await startFlow(flow, options);
+    } catch (error) {
+      logger.error(`Failed to start flow '${flow}':`, error);
+      return { flow, success: false, error: error.message };
+    }
+  });
+
+  const results = await Promise.allSettled(promises);
+  
+  let successCount = 0;
+  let failureCount = 0;
+  
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      successCount++;
+    } else {
+      failureCount++;
+      logger.error(`Flow '${flows[index]}' failed:`, result.reason);
+    }
+  });
+
+  logger.info(`Multiple flow execution completed: ${successCount} successful, ${failureCount} failed`);
+}
 
 async function startFlow(flow, options) {
   // Check required environment variables
   const privateKey = process.env.SEI_PRIVATE_KEY;
   if (!privateKey) {
     logger.error('SEI_PRIVATE_KEY environment variable is required');
-    process.exit(1);
-  }
-
-  // Validate network
-  const validNetworks = ['mainnet', 'testnet', 'devnet'];
-  if (!validNetworks.includes(options.network)) {
-    logger.error(`Invalid network: ${options.network}. Must be one of: ${validNetworks.join(', ')}`);
     process.exit(1);
   }
 
@@ -141,90 +195,181 @@ async function startFlow(flow, options) {
   const flowName = flowData.name || path.basename(flowPath, '.json');
   
   // Check if flow is already running
-  if (runningFlows.has(flowName)) {
+  if (runningFlows.has(flowName) || flowTracker.isFlowRunning(flowName)) {
     logger.warn(`Flow '${flowName}' is already running`);
     return;
   }
 
-  logger.info(`Starting flow '${flowName}' on ${options.network.toUpperCase()}...`);
+  logger.info(`Starting flow '${flowName}'...`);
   
-  // Create provider
-  const provider = 'openai';
-  
-  // Create executor
-  const executor = new BackendFlowExecutor(privateKey, provider);
+  // Create executor (OpenAI only)
+  const executor = new BackendFlowExecutor(privateKey);
   
   // Store flow info
   const flowInfo = {
     name: flowName,
     path: flowPath,
-    network: options.network,
     executor,
     startTime: new Date(),
     status: 'running'
   };
   
   runningFlows.set(flowName, flowInfo);
+  flowTracker.addRunningFlow(flowName, flowInfo);
   
   try {
     await executor.executeFlow(flowData);
     logger.info(`Flow '${flowName}' completed successfully.`);
     flowInfo.status = 'completed';
+    flowTracker.updateFlowStatus(flowName, 'completed');
   } catch (err) {
     logger.error(`Flow '${flowName}' failed:`, err);
     flowInfo.status = 'failed';
     flowInfo.error = err.message;
+    flowTracker.updateFlowStatus(flowName, 'failed', err.message);
   } finally {
     if (!options.daemon) {
       runningFlows.delete(flowName);
+      flowTracker.removeRunningFlow(flowName);
+      
+      // Stop webhook server if no other flows are running
+      if (runningFlows.size === 0) {
+        if (executor.webhookHandler && executor.webhookHandler.server) {
+          executor.webhookHandler.stop();
+          logger.info('🛑 Webhook server stopped');
+        }
+      }
     }
   }
 }
 
-async function stopFlows(options) {
-  if (options.all) {
-    if (runningFlows.size === 0) {
+async function stopFlows(flowName) {
+  if (!flowName) {
+    // Stop all flows
+    const runningFlowsFromTracker = flowTracker.getRunningFlows();
+    const runningFlowNames = Object.keys(runningFlowsFromTracker).filter(name => 
+      runningFlowsFromTracker[name].status === 'running'
+    );
+    
+    if (runningFlows.size === 0 && runningFlowNames.length === 0) {
       logger.info('No flows are currently running.');
       return;
     }
     
-    logger.info(`Stopping ${runningFlows.size} running flows...`);
+    const totalRunning = runningFlows.size + runningFlowNames.length;
+    logger.info(`Stopping ${totalRunning} running flows...`);
+    
+    // Stop flows in memory
     for (const [name, flowInfo] of runningFlows) {
       logger.info(`Stopping flow '${name}'...`);
-      // For now, we'll just remove from the map since we don't have a way to stop execution
-      // In a real implementation, you'd want to implement proper flow cancellation
       runningFlows.delete(name);
     }
+    
+    // Stop flows from tracker
+    for (const name of runningFlowNames) {
+      logger.info(`Stopping flow '${name}'...`);
+      flowTracker.removeRunningFlow(name);
+    }
+    
     logger.info('All flows stopped.');
-  } else if (options.flow) {
-    const flowName = options.flow;
-    if (!runningFlows.has(flowName)) {
+  } else {
+    // Stop specific flow with flexible matching
+    let actualFlowName = null;
+    let isRunningInMemory = false;
+    let isRunningInTracker = false;
+    
+    // First try exact match
+    if (runningFlows.has(flowName) || flowTracker.isFlowRunning(flowName)) {
+      actualFlowName = flowName;
+      isRunningInMemory = runningFlows.has(flowName);
+      isRunningInTracker = flowTracker.isFlowRunning(flowName);
+    } else {
+      // Try flexible matching (case-insensitive, handle filename vs display name)
+      const runningFlowsFromTracker = flowTracker.getRunningFlows();
+      const allRunningNames = [
+        ...Array.from(runningFlows.keys()),
+        ...Object.keys(runningFlowsFromTracker).filter(name => 
+          runningFlowsFromTracker[name].status === 'running'
+        )
+      ];
+      
+      // Create mapping of possible matches
+      const flowMatches = allRunningNames.filter(name => {
+        const lowerName = name.toLowerCase();
+        const lowerInput = flowName.toLowerCase();
+        
+        // Direct match
+        if (lowerName === lowerInput) return true;
+        
+        // Convert spaces to underscores and vice versa
+        const nameWithUnderscores = lowerName.replace(/\s+/g, '_');
+        const nameWithSpaces = lowerName.replace(/_+/g, ' ');
+        const inputWithUnderscores = lowerInput.replace(/\s+/g, '_');
+        const inputWithSpaces = lowerInput.replace(/_+/g, ' ');
+        
+        return nameWithUnderscores === lowerInput || 
+               nameWithSpaces === lowerInput ||
+               lowerName === inputWithUnderscores ||
+               lowerName === inputWithSpaces;
+      });
+      
+      if (flowMatches.length === 1) {
+        actualFlowName = flowMatches[0];
+        isRunningInMemory = runningFlows.has(actualFlowName);
+        isRunningInTracker = flowTracker.isFlowRunning(actualFlowName);
+      } else if (flowMatches.length > 1) {
+        logger.error(`Multiple flows match '${flowName}': ${flowMatches.join(', ')}`);
+        logger.info('Please use the exact flow name from the list.');
+        return;
+      }
+    }
+    
+    if (!actualFlowName) {
       logger.error(`Flow '${flowName}' is not running.`);
+      logger.info('Running flows:');
+      await listFlows('running');
       return;
     }
     
-    logger.info(`Stopping flow '${flowName}'...`);
-    runningFlows.delete(flowName);
-    logger.info(`Flow '${flowName}' stopped.`);
-  } else {
-    logger.error('Please specify --all or --flow <name>');
-    process.exit(1);
+    logger.info(`Stopping flow '${actualFlowName}'...`);
+    if (isRunningInMemory) {
+      runningFlows.delete(actualFlowName);
+    }
+    if (isRunningInTracker) {
+      flowTracker.removeRunningFlow(actualFlowName);
+    }
+    logger.info(`Flow '${actualFlowName}' stopped.`);
   }
 }
 
-async function listFlows(options) {
+async function listFlows(type) {
   const flowsDir = path.join(process.cwd(), 'flows');
   
-  if (options.running) {
-    if (runningFlows.size === 0) {
+  if (type === 'running') {
+    const runningFlowsFromTracker = flowTracker.getRunningFlows();
+    const runningFlowNames = Object.keys(runningFlowsFromTracker).filter(name => 
+      runningFlowsFromTracker[name].status === 'running'
+    );
+    
+    if (runningFlows.size === 0 && runningFlowNames.length === 0) {
       logger.info('No flows are currently running.');
       return;
     }
     
     logger.info('Running flows:');
+    
+    // Show flows in memory
     for (const [name, flowInfo] of runningFlows) {
       const duration = Math.floor((new Date() - flowInfo.startTime) / 1000);
-      logger.info(`  ${name} (${flowInfo.network}) - ${flowInfo.status} (${duration}s)`);
+      logger.info(`  ${name} - ${flowInfo.status} (${duration}s)`);
+    }
+    
+    // Show flows from tracker
+    for (const name of runningFlowNames) {
+      const flowInfo = runningFlowsFromTracker[name];
+      const startTime = new Date(flowInfo.startTime);
+      const duration = Math.floor((new Date() - startTime) / 1000);
+      logger.info(`  ${name} - ${flowInfo.status} (${duration}s)`);
     }
   } else {
     if (!fs.existsSync(flowsDir)) {
@@ -241,8 +386,9 @@ async function listFlows(options) {
     logger.info('Available flows:');
     for (const file of files) {
       const flowName = path.basename(file, '.json');
-      const isRunning = runningFlows.has(flowName);
-      const status = isRunning ? 'RUNNING' : 'STOPPED';
+      const isRunningInMemory = runningFlows.has(flowName);
+      const isRunningInTracker = flowTracker.isFlowRunning(flowName);
+      const status = (isRunningInMemory || isRunningInTracker) ? 'RUNNING' : 'STOPPED';
       logger.info(`  ${flowName} [${status}]`);
     }
   }
@@ -251,12 +397,25 @@ async function listFlows(options) {
 async function showStatus(flowName) {
   if (flowName) {
     // Show status of specific flow
-    if (runningFlows.has(flowName)) {
+    const isRunningInMemory = runningFlows.has(flowName);
+    const isRunningInTracker = flowTracker.isFlowRunning(flowName);
+    
+    if (isRunningInMemory) {
       const flowInfo = runningFlows.get(flowName);
       const duration = Math.floor((new Date() - flowInfo.startTime) / 1000);
       logger.info(`Flow '${flowName}':`);
       logger.info(`  Status: ${flowInfo.status}`);
-      logger.info(`  Network: ${flowInfo.network}`);
+      logger.info(`  Duration: ${duration}s`);
+      if (flowInfo.error) {
+        logger.info(`  Error: ${flowInfo.error}`);
+      }
+    } else if (isRunningInTracker) {
+      const flows = flowTracker.getRunningFlows();
+      const flowInfo = flows[flowName];
+      const startTime = new Date(flowInfo.startTime);
+      const duration = Math.floor((new Date() - startTime) / 1000);
+      logger.info(`Flow '${flowName}':`);
+      logger.info(`  Status: ${flowInfo.status}`);
       logger.info(`  Duration: ${duration}s`);
       if (flowInfo.error) {
         logger.info(`  Error: ${flowInfo.error}`);
@@ -266,14 +425,29 @@ async function showStatus(flowName) {
     }
   } else {
     // Show status of all flows
-    if (runningFlows.size === 0) {
+    const runningFlowsFromTracker = flowTracker.getRunningFlows();
+    const runningFlowNames = Object.keys(runningFlowsFromTracker).filter(name => 
+      runningFlowsFromTracker[name].status === 'running'
+    );
+    
+    if (runningFlows.size === 0 && runningFlowNames.length === 0) {
       logger.info('No flows are currently running.');
       return;
     }
     
     logger.info('Flow Status:');
+    
+    // Show flows in memory
     for (const [name, flowInfo] of runningFlows) {
       const duration = Math.floor((new Date() - flowInfo.startTime) / 1000);
+      logger.info(`  ${name}: ${flowInfo.status} (${duration}s)`);
+    }
+    
+    // Show flows from tracker
+    for (const name of runningFlowNames) {
+      const flowInfo = runningFlowsFromTracker[name];
+      const startTime = new Date(flowInfo.startTime);
+      const duration = Math.floor((new Date() - startTime) / 1000);
       logger.info(`  ${name}: ${flowInfo.status} (${duration}s)`);
     }
   }
@@ -328,24 +502,5 @@ async function validateFlow(flow) {
     process.exit(1);
   }
 }
-
-// Handle process termination
-process.on('SIGINT', () => {
-  logger.info('Shutting down...');
-  if (runningFlows.size > 0) {
-    logger.info(`Stopping ${runningFlows.size} running flows...`);
-    runningFlows.clear();
-  }
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Shutting down...');
-  if (runningFlows.size > 0) {
-    logger.info(`Stopping ${runningFlows.size} running flows...`);
-    runningFlows.clear();
-  }
-  process.exit(0);
-});
 
 program.parse(); 

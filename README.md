@@ -4,7 +4,7 @@ A Node.js-based flow execution engine for AI agent workflows on the SEI blockcha
 
 ## 🚀 Features
 
-- **Network-Aware Blockchain Operations**: Support for mainnet, testnet, and devnet
+- **Network-Aware Blockchain Operations**: Support for mainnet and testnet
 - **LLM Integration**: AI-powered decision making with LangChain
 - **Variable Management**: Dynamic variable handling across nodes
 - **Timer Operations**: Delay, interval, and timeout functionality
@@ -51,8 +51,6 @@ node src/index.js flow.json mainnet
 # Testnet
 node src/index.js flow.json testnet
 
-# Devnet
-node src/index.js flow.json devnet
 ```
 
 ## 🔗 Supported Blockchain Operations
@@ -107,7 +105,7 @@ node src/index.js flow.json devnet
 - **Configuration**:
   ```json
   {
-    "network": "mainnet|testnet|devnet",
+    "network": "mainnet|testnet",
     "selectedTool": "sei_erc20_balance",
     "toolParameters": {
       "ticker": "SEI"
@@ -183,7 +181,7 @@ node src/index.js flow.json devnet
 ### EnhancedSeiAgentKit
 A wrapper around the original `sei-agent-kit` that adds network selection capabilities:
 
-- **Network Support**: Mainnet, testnet, devnet
+- **Network Support**: Mainnet, testnet
 - **Tool Validation**: Ensures operations are supported on selected network
 - **Dynamic RPC**: Automatically configures RPC endpoints
 - **Warning System**: Alerts for non-mainnet DeFi operations
