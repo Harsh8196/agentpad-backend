@@ -1,22 +1,26 @@
 # AgentPad Backend
 
-A Node.js-based flow execution engine for AI agent workflows on the SEI blockchain.
+A Node.js-based flow execution engine for AI agent workflows on the SEI blockchain, designed to work seamlessly with the AgentPad frontend.
 
 ## 🚀 Features
 
-- **Network-Aware Blockchain Operations**: Support for mainnet and testnet
-- **LLM Integration**: AI-powered decision making with LangChain
+- **Network-Aware Blockchain Operations**: Support for SEI mainnet and testnet
+- **LLM Integration**: AI-powered decision making with OpenAI models
 - **Variable Management**: Dynamic variable handling across nodes
 - **Timer Operations**: Delay, interval, and timeout functionality
 - **Conditional Logic**: Branching based on conditions
 - **Arithmetic Operations**: Mathematical calculations
 - **Real-time Logging**: Comprehensive execution logging
+- **Webhook Management**: Automatic Telegram webhook handling
+- **Smart Contract Integration**: Dynamic ABI parsing and execution
+- **Market Data**: Real-time token price fetching
 
 ## 📋 Prerequisites
 
 - Node.js 18+
 - SEI private key
 - OpenAI API key (for LLM nodes)
+- Telegram bot token (for approval workflows)
 
 ## 🛠️ Installation
 
@@ -27,30 +31,52 @@ npm install
 
 2. **Environment Setup**:
 ```bash
-   cp env.example .env
-   ```
-   
-   Edit `.env` with your configuration:
+cp env.example .env
+```
+
+Edit `.env` with your configuration:
 ```bash
-   SEI_PRIVATE_KEY=your_private_key_here
-   OPENAI_API_KEY=your_openai_api_key_here
-   ```
+# Required
+SEI_PRIVATE_KEY=your_private_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Optional
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
+COINGECKO_DEMO_API_KEY=your_coingecko_api_key_here
+```
 
 ## 🎯 Usage
 
-### Basic Flow Execution
+### Using the CLI (Recommended)
 ```bash
-node src/index.js flow.json
+# Start a flow
+npm run agentpad start flow_name
+
+# Start multiple flows
+npm run agentpad start flow1 flow2
+
+# Stop flows
+npm run agentpad stop
+
+# List available flows
+npm run agentpad list
+
+# Check status
+npm run agentpad status
+
+# Validate a flow
+npm run agentpad validate flow_name
 ```
 
-### Network-Specific Execution
+### Direct Execution (Legacy)
 ```bash
-# Mainnet (default)
+# Single flow execution
+node src/index.js flow.json
+
+# Network-specific execution
 node src/index.js flow.json mainnet
-
-# Testnet
 node src/index.js flow.json testnet
-
 ```
 
 ## 🔗 Supported Blockchain Operations
@@ -77,109 +103,82 @@ node src/index.js flow.json testnet
 - `sei_citrex_get_balance` - Get trading balance
 - `sei_citrex_get_products` - Get available products
 - `sei_citrex_get_order_book` - Get order book data
+- `sei_citrex_list_balances` - List all balances
+- `sei_citrex_deposit` - Deposit funds
+- `sei_citrex_withdraw` - Withdraw funds
+- `sei_citrex_get_account_health` - Get account health
+- `sei_citrex_list_open_orders` - List open orders
+- `sei_citrex_cancel_order` - Cancel orders
 
 ### Social Operations (Mainnet Only)
 - `sei_post_tweet` - Post tweets
 - `sei_get_account_details` - Get account details
+- `sei_post_tweet_reply` - Reply to tweets
+
+### Strategy Operations (Mainnet Only)
+- `sei_compose_trade_by_source_tx` - Compose trade by source
+- `sei_compose_trade_by_target_tx` - Compose trade by target
+- `sei_create_buy_sell_strategy` - Create buy/sell strategy
+- `sei_create_overlapping_strategy` - Create overlapping strategy
+- `sei_delete_strategy` - Delete strategy
+- `sei_get_user_strategies` - Get user strategies
+- `sei_update_strategy` - Update strategy
 
 ## 📊 Node Types
 
 ### Start Node
 - **Purpose**: Flow entry point and variable initialization
-- **Configuration**: 
-  ```json
-  {
-    "variables": [
-      {
-        "name": "myVariable",
-        "type": "string",
-        "defaultValue": "initial value",
-        "description": "Variable description"
-      }
-    ]
-  }
-  ```
+- **Configuration**: Define initial variables with types and default values
 
 ### Blockchain Node
 - **Purpose**: Execute SEI blockchain operations
-- **Configuration**:
-  ```json
-  {
-    "network": "mainnet|testnet",
-    "selectedTool": "sei_erc20_balance",
-    "toolParameters": {
-      "ticker": "SEI"
-    },
-    "outputVariable": "result"
-  }
-  ```
+- **Configuration**: Network selection, tool choice, and parameters
 
 ### LLM Node
 - **Purpose**: AI-powered analysis and decision making
-- **Configuration**:
-  ```json
-  {
-    "prompt": "Analyze the current state and suggest actions",
-    "input": "Current workflow state",
-    "outputVariable": "aiAnalysis",
-    "chatInterface": false,
-    "model": "gpt-4-turbo"
-  }
-  ```
+- **Configuration**: Prompt, input variables, model selection, and output
 
 ### Timer Node
 - **Purpose**: Add delays or intervals
-- **Configuration**:
-  ```json
-  {
-    "timerType": "delay|interval|timeout",
-    "duration": 60,
-    "unit": "s|m|ms",
-    "repeatCount": 3,
-    "outputVariable": "timerResult"
-  }
-  ```
+- **Types**: Delay, interval, timeout
 
 ### Conditional Node
 - **Purpose**: Make decisions based on conditions
-- **Configuration**:
-  ```json
-  {
-    "value1": "variable1",
-    "operator": "equals|not_equals|greater|less",
-    "value2": "variable2",
-    "outputVariable": "conditionResult"
-  }
-  ```
+- **Operators**: equals, not_equals, greater, less
 
 ### Arithmetic Node
 - **Purpose**: Perform mathematical operations
-- **Configuration**:
-  ```json
-  {
-    "value1": "variable1",
-    "operator": "add|subtract|multiply|divide",
-    "value2": "variable2",
-    "outputVariable": "calculationResult"
-  }
-  ```
+- **Operators**: add, subtract, multiply, divide
 
 ### Variable Node
 - **Purpose**: Set, get, or modify variables
-- **Configuration**:
-  ```json
-  {
-    "variableName": "myVariable",
-    "operation": "set|increment|decrement",
-    "value": "newValue",
-    "outputVariable": "operationResult"
-  }
-  ```
+- **Operations**: set, get, increment, decrement
+
+### Market Data Node
+- **Purpose**: Fetch real-time token prices
+- **Sources**: CoinGecko API
+
+### Smart Contract Nodes
+- **Read Node**: Execute read operations on smart contracts
+- **Write Node**: Execute write operations on smart contracts
+- **Features**: Dynamic ABI parsing, method discovery
+
+### Telegram Node
+- **Purpose**: Send notifications and interactive messages
+- **Features**: Inline keyboards, approval workflows
+
+### User Approval Node
+- **Purpose**: Wait for user approval before proceeding
+- **Integration**: Works with Telegram for interactive approvals
+
+### Logger Node
+- **Purpose**: Log messages during flow execution
+- **Levels**: info, warn, error, debug
 
 ## 🔧 Architecture
 
-### EnhancedSeiAgentKit
-A wrapper around the original `sei-agent-kit` that adds network selection capabilities:
+### NetworkAwareSeiAgentKit
+A wrapper around `sei-agent-kit` that adds network selection capabilities:
 
 - **Network Support**: Mainnet, testnet
 - **Tool Validation**: Ensures operations are supported on selected network
@@ -189,17 +188,18 @@ A wrapper around the original `sei-agent-kit` that adds network selection capabi
 ### Flow Executor
 The core execution engine that:
 
-- **Recursive Execution**: Traverses flow nodes recursively
+- **Sequential Execution**: Processes nodes in dependency order
 - **Variable Resolution**: Handles variable references and constants
 - **Network Management**: Creates network-specific SeiAgentKit instances
 - **Error Handling**: Comprehensive error logging and recovery
+- **Webhook Management**: Automatic Telegram webhook handling
 
-## 📝 Example Flows
+## 📝 Example Flow Structure
 
-### Basic Token Operations (Testnet)
 ```json
 {
-  "name": "Basic Token Operations",
+  "name": "Example Flow",
+  "description": "A simple test flow",
   "nodes": [
     {
       "id": "start-1",
@@ -217,7 +217,7 @@ The core execution engine that:
       "type": "blockchain",
       "data": {
         "config": {
-          "network": "testnet",
+          "network": "mainnet",
           "selectedTool": "sei_erc20_balance",
           "toolParameters": { "ticker": "SEI" },
           "outputVariable": "balance"
@@ -231,63 +231,14 @@ The core execution engine that:
 }
 ```
 
-### DeFi Operations (Mainnet)
-```json
-{
-  "name": "DeFi Operations",
-  "nodes": [
-    {
-      "id": "start-1",
-      "type": "start",
-      "data": { "config": { "variables": [] } }
-    },
-    {
-      "id": "blockchain-1",
-      "type": "blockchain",
-      "data": {
-        "config": {
-          "network": "mainnet",
-          "selectedTool": "sei_swap",
-          "toolParameters": {
-            "amount": "10",
-            "tokenIn": "0x...",
-            "tokenOut": "0x..."
-          }
-        }
-      }
-    },
-    {
-      "id": "llm-1",
-      "type": "llm",
-      "data": {
-        "config": {
-          "prompt": "Analyze the swap result and suggest next actions",
-          "outputVariable": "analysis"
-        }
-      }
-    }
-  ],
-  "edges": [
-    { "source": "start-1", "target": "blockchain-1" },
-    { "source": "blockchain-1", "target": "llm-1" }
-  ]
-}
-```
-
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **Memory Issues**: If you encounter memory problems during build:
-   ```bash
-   node --max-old-space-size=8192 ./node_modules/.bin/tsc
-   ```
-
-2. **Network Connection**: Ensure your RPC endpoints are accessible
-
-3. **Private Key**: Verify your SEI private key is correct and has sufficient balance
-
-4. **API Keys**: Check that your OpenAI API key is valid
+1. **Environment Variables**: Ensure all required environment variables are set
+2. **Network Connection**: Verify RPC endpoints are accessible
+3. **Private Key**: Check that your SEI private key is correct and has sufficient balance
+4. **API Keys**: Verify that your OpenAI API key is valid
 
 ### Logging
 
@@ -301,8 +252,8 @@ The system uses Winston for logging. Set `LOG_LEVEL` in your `.env` file:
 
 ### Adding New Blockchain Operations
 
-1. **Update Tool Mapping**: Add to `TOOL_NETWORK_SUPPORT` in `enhancedSeiAgentKit.js`
-2. **Add Method**: Implement in `executeSeiAgentKitMethod` in `flowExecutor.js`
+1. **Update sei-agent-kit**: Ensure the operation is available in the latest version
+2. **Add to flowExecutor**: Implement in the blockchain node execution logic
 3. **Test**: Create test flows to verify functionality
 
 ### Adding New Node Types
@@ -313,4 +264,4 @@ The system uses Winston for logging. Set `LOG_LEVEL` in your `.env` file:
 
 ## 📄 License
 
-This project is part of AgentPad and follows the same licensing terms. 
+MIT License - see LICENSE file for details.

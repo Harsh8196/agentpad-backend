@@ -6,7 +6,6 @@ import { TelegramNode } from './telegramNode.js';
 import { UserApprovalNode } from './userApprovalNode.js';
 import { WebhookHandler } from '../webhookHandler.js';
 import SmartContractNode from './smartContractNode.js';
-
 export class BackendFlowExecutor {
   constructor(privateKey) {
     this.privateKey = privateKey;
@@ -35,6 +34,15 @@ export class BackendFlowExecutor {
     const startNode = nodes.find(n => n.type === 'start');
     if (!startNode) throw new Error('No Start node found');
 
+    // Initialize variables from Start node
+    if (startNode?.data?.config?.variables) {
+      this.variables = {};
+      startNode.data.config.variables.forEach(v => {
+        this.variables[v.name] = null;
+      });
+    }
+    if (!startNode) throw new Error('No Start node found');
+
     // Start webhook server if not already running
     if (!this.webhookHandler.server) {
       await this.webhookHandler.start(3001);
@@ -48,6 +56,90 @@ export class BackendFlowExecutor {
     return this.nodeResults;
   }
 
+  async executeFlowFromNode(startNode, nodeMap, edges, visited, isIntervalExecution = false) {
+    // Get all nodes reachable from the start node
+    const reachableNodes = this.getReachableNodes(startNode, nodeMap, edges);
+    logger.info(`Reachable nodes from ${startNode.id}: ${reachableNodes.map(n => n.id).join(', ')}`);
+    
+    // Execute in topological order
+    const executionOrder = this.topologicalSort(reachableNodes, edges);
+    logger.info(`Execution order: ${executionOrder.map(n => n.id).join(' → ')}`);
+    
+    for (const node of executionOrder) {
+      if (!visited.has(node.id)) {
+        logger.info(`Executing ${node.id} (visited: ${Array.from(visited).join(', ')})`);
+        await this.executeNodeRecursive(node, nodeMap, edges, visited, isIntervalExecution);
+        logger.info(`Completed ${node.id} (visited now: ${Array.from(visited).join(', ')})`);
+      } else {
+        logger.info(`Skipping ${node.id} - already visited`);
+      }
+    }
+  }
+
+  getReachableNodes(startNode, nodeMap, edges) {
+    const reachable = new Set();
+    const queue = [startNode];
+    
+    while (queue.length > 0) {
+      const node = queue.shift();
+      if (reachable.has(node.id)) continue;
+      
+      reachable.add(node.id);
+      
+      // Add all target nodes
+      const outgoingEdges = edges.filter(e => e.source === node.id);
+      for (const edge of outgoingEdges) {
+        const targetNode = nodeMap[edge.target];
+        if (targetNode && !reachable.has(targetNode.id)) {
+          queue.push(targetNode);
+        }
+      }
+    }
+    
+    return Array.from(reachable).map(id => nodeMap[id]).filter(Boolean);
+  }
+
+  topologicalSort(nodes, edges) {
+    const nodeIds = nodes.map(n => n.id);
+    const relevantEdges = edges.filter(e => nodeIds.includes(e.source) && nodeIds.includes(e.target));
+    
+    // Calculate in-degree for each node
+    const inDegree = {};
+    const nodeMap = {};
+    
+    for (const node of nodes) {
+      inDegree[node.id] = 0;
+      nodeMap[node.id] = node;
+    }
+    
+    for (const edge of relevantEdges) {
+      inDegree[edge.target]++;
+    }
+    
+    logger.info(`In-degrees: ${Object.entries(inDegree).map(([id, deg]) => `${id}:${deg}`).join(', ')}`);
+    logger.info(`Relevant edges: ${relevantEdges.map(e => `${e.source}→${e.target}`).join(', ')}`);
+    
+    // Start with nodes that have no incoming edges
+    const queue = nodes.filter(node => inDegree[node.id] === 0);
+    const result = [];
+    
+    while (queue.length > 0) {
+      const node = queue.shift();
+      result.push(node);
+      
+      // Reduce in-degree of target nodes
+      const outgoingEdges = relevantEdges.filter(e => e.source === node.id);
+      for (const edge of outgoingEdges) {
+        inDegree[edge.target]--;
+        if (inDegree[edge.target] === 0) {
+          queue.push(nodeMap[edge.target]);
+        }
+      }
+    }
+    
+    return result;
+  }
+
   async executeNodeRecursive(node, nodeMap, edges, visited, isIntervalExecution = false) {
     // Check if we should stop execution
     if (this.shouldStop) {
@@ -57,7 +149,17 @@ export class BackendFlowExecutor {
     
     // For interval executions, don't mark nodes as visited to allow re-execution
     if (!isIntervalExecution && visited.has(node.id)) return;
-    if (!isIntervalExecution) visited.add(node.id);
+    
+    // Check if all dependencies are satisfied (only for non-interval executions)
+    if (!isIntervalExecution) {
+      const incomingEdges = edges.filter(edge => edge.target === node.id);
+      const unsatisfiedDeps = incomingEdges.filter(edge => !visited.has(edge.source));
+      if (unsatisfiedDeps.length > 0) {
+        // Dependencies not satisfied, defer execution
+        return;
+      }
+      visited.add(node.id);
+    }
     
     logger.info(`[START] Node ${node.type} (${node.id})${isIntervalExecution ? ' [INTERVAL]' : ''}`);
     try {
@@ -76,24 +178,47 @@ export class BackendFlowExecutor {
         }
       }
       
-      // Find next nodes based on edges
+      // Find next nodes and retry execution for nodes that might now have satisfied dependencies
       const nextEdges = edges.filter(e => e.source === node.id);
+      const allTargetNodes = nextEdges.map(edge => nodeMap[edge.target]).filter(Boolean);
       
-      for (const edge of nextEdges) {
-        const nextNode = nodeMap[edge.target];
-        if (!nextNode) continue;
-        
-        // For conditional nodes, check the sourceHandle to determine path
-        if (node.type === 'conditional' && edge.sourceHandle) {
+      // Also find nodes that depend on this node but haven't been executed yet
+      const dependentNodes = edges
+        .filter(edge => edge.source === node.id)
+        .map(edge => nodeMap[edge.target])
+        .filter(node => node && !visited.has(node.id));
+
+      if (node.type === 'conditional') {
+        // Respect branching based on boolean result
+        const tasks = nextEdges.map(async (edge) => {
+          const nextNode = nodeMap[edge.target];
+          if (!nextNode) return;
+          if (!edge.sourceHandle) return; // skip ill-formed edge
           const conditionResult = this.nodeResults[node.id];
           const shouldFollow = edge.sourceHandle === 'true' ? conditionResult : !conditionResult;
-          
           if (shouldFollow) {
             await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, isIntervalExecution);
           }
-        } else {
-          // For other nodes, always follow
-          await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, isIntervalExecution);
+        });
+        await Promise.all(tasks);
+      } else {
+        // For interval execution, don't automatically execute children
+        // The topological sort in executeFlowFromNode handles the order
+        if (!isIntervalExecution) {
+          // Execute children and retry any nodes that might now be ready
+          for (const edge of nextEdges) {
+            const nextNode = nodeMap[edge.target];
+            if (!nextNode) continue;
+            await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, isIntervalExecution);
+          }
+          
+          // Try to execute any other nodes that might now have all their dependencies satisfied
+          const allNodes = Object.values(nodeMap);
+          for (const candidateNode of allNodes) {
+            if (!visited.has(candidateNode.id)) {
+              await this.executeNodeRecursive(candidateNode, nodeMap, edges, visited, isIntervalExecution);
+            }
+          }
         }
       }
     } catch (err) {
@@ -248,14 +373,50 @@ export class BackendFlowExecutor {
 
   executeArithmeticNode(node) {
     const { config } = node.data;
-    const v1 = this.resolveValue(config.value1);
-    const v2 = this.resolveValue(config.value2);
-    let result;
+    const v1Raw = this.resolveValue(config.value1);
+    const v2Raw = this.resolveValue(config.value2);
+
+    // Guard: operands must resolve to numbers for arithmetic
+    const parseNumber = (label, val) => {
+      if (val === null || val === undefined) {
+        throw new Error(`Arithmetic operand '${label}' is undefined (expression uses '${config[label] || ''}')`);
+      }
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (/^-?\d*\.?\d+$/.test(trimmed)) return Number(trimmed);
+        // Looks like an unresolved variable name; surface a clear error
+        if (/^[a-zA-Z_][a-zA-Z0-9_\.]*$/.test(trimmed)) {
+          throw new Error(`Arithmetic operand '${label}' references variable '${trimmed}' which is not defined yet`);
+        }
+        throw new Error(`Arithmetic operand '${label}' is not numeric (got: '${val}')`);
+      }
+      throw new Error(`Arithmetic operand '${label}' is not numeric (type: ${typeof val})`);
+    };
+
+    let v1, v2, result;
+    try {
+      v1 = parseNumber('value1', v1Raw);
+      v2 = parseNumber('value2', v2Raw);
+    } catch (err) {
+      throw err; // bubble up with clear message
+    }
     switch (config.operation) {
       case 'add': result = v1 + v2; break;
       case 'subtract': result = v1 - v2; break;
       case 'multiply': result = v1 * v2; break;
-      case 'divide': result = v2 !== 0 ? v1 / v2 : null; break;
+      case 'divide': 
+        if (v2 === 0) {
+          // Handle first execution case for percentage calculations
+          if (typeof v1 === 'number' && v1 !== 0) {
+            result = 0; // No change on first execution
+          } else {
+            result = null;
+          }
+        } else {
+          result = v1 / v2;
+        }
+        break;
       default: throw new Error('Unknown arithmetic operation');
     }
     if (config.outputVariable) this.variables[config.outputVariable] = result;
@@ -308,12 +469,14 @@ export class BackendFlowExecutor {
             count++;
             logger.info(`Interval execution ${count}/${maxCount === Infinity ? '∞' : maxCount} (repeatCount=${repeatCount}, maxCount=${maxCount})`);
             
-            // Execute connected logic during each interval
+            // Execute connected logic during each interval using proper topological order
             const nextEdges = edges.filter(e => e.source === node.id);
             for (const edge of nextEdges) {
               const nextNode = nodeMap[edge.target];
               if (nextNode) {
-                await this.executeNodeRecursive(nextNode, nodeMap, edges, visited, true);
+                // For interval execution, use a fresh visited set for dependency tracking
+                const intervalVisited = new Set();
+                await this.executeFlowFromNode(nextNode, nodeMap, edges, intervalVisited, true);
               }
             }
             
@@ -427,7 +590,17 @@ export class BackendFlowExecutor {
     const seiKit = new NetworkAwareSeiAgentKit(this.privateKey, ModelProviderName.OPENAI, network);
     
     try {
-      const result = await this.executeSeiAgentKitMethod(seiKit, selectedTool, parameters);
+      // Resolve parameter values from variables (supports plain names and dotted paths)
+      const resolvedParameters = Object.fromEntries(
+        Object.entries(parameters).map(([key, value]) => {
+          if (typeof value === 'string') {
+            return [key, this.resolveValue(value)];
+          }
+          return [key, value];
+        })
+      );
+
+      const result = await this.executeSeiAgentKitMethod(seiKit, selectedTool, resolvedParameters);
       
       if (config.outputVariable) {
         this.variables[config.outputVariable] = result;
@@ -606,6 +779,14 @@ export class BackendFlowExecutor {
       return this.variables[val];
     }
 
+    // Support {var} or {var.path} placeholder style in value fields
+    if (typeof val === 'string' && val.startsWith('{') && val.endsWith('}')) {
+      const inner = val.slice(1, -1).trim();
+      const resolved = this.resolveVariablePath(inner);
+      if (resolved !== undefined) return resolved;
+      // if not resolved, fall through (will be handled by numeric coercion below)
+    }
+
     // Support dotted path: variable.property[.nested]
     if (typeof val === 'string' && val.includes('.')) {
       const parts = val.split('.');
@@ -747,7 +928,8 @@ export class BackendFlowExecutor {
     
     // Store result in output variable if specified
     if (node.data.config.outputVariable) {
-      this.variables[node.data.config.outputVariable] = result;
+      // Save the action string (e.g., "approve" | "reject") for easy comparisons in conditionals
+      this.variables[node.data.config.outputVariable] = result?.action ?? '';
     }
     
     this.nodeResults[node.id] = result;

@@ -79,7 +79,7 @@ export class NetworkAwareSeiAgentKit extends SeiAgentKit {
       transport: http(chainConfig.rpcUrls.default.http[0])
     });
     
-    console.log(`✅ SeiAgentKit configured for ${network} network (${chainConfig.rpcUrls.default.http[0]})`);
+
   }
   
   getNetworkInfo() {

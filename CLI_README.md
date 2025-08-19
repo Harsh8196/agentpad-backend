@@ -15,11 +15,14 @@ npm run agentpad start flow1
 # Start multiple flows
 npm run agentpad start flow1 flow2
 
-# Validate a flow
-npm run agentpad validate flow1
+# Stop flows
+npm run agentpad stop
 
 # Show status
 npm run agentpad status
+
+# Validate a flow
+npm run agentpad validate flow1
 ```
 
 ### Using npx directly
@@ -33,11 +36,14 @@ npx --no-install tsx --no-warnings bin/agentpad.js start flow1
 # Start multiple flows
 npx --no-install tsx --no-warnings bin/agentpad.js start flow1 flow2
 
-# Validate a flow
-npx --no-install tsx --no-warnings bin/agentpad.js validate flow1
+# Stop flows
+npx --no-install tsx --no-warnings bin/agentpad.js stop
 
 # Show status
 npx --no-install tsx --no-warnings bin/agentpad.js status
+
+# Validate a flow
+npx --no-install tsx --no-warnings bin/agentpad.js validate flow1
 ```
 
 ## Commands
@@ -51,8 +57,8 @@ agentpad start <flows...> [options]
 - `<flows...>` - Flow file paths or flow names (can specify multiple)
 
 **Options:**
-- `-d, --daemon` - Run as daemon process
 - `-w, --watch` - Watch for changes and restart automatically
+- `-d, --daemon` - Run as daemon process
 
 **Examples:**
 ```bash
@@ -133,7 +139,7 @@ npm run agentpad validate flow1
 
 ## Multiple Flow Execution
 
-The CLI supports running multiple flows simultaneously by simply listing them:
+The CLI supports running multiple flows simultaneously:
 
 ```bash
 # Start multiple flows at once
@@ -145,12 +151,12 @@ npm run agentpad start flow1 flow2 flow3
 ## Flow Management
 
 ### Flow Storage
-Flows are stored in the `flows/` directory as JSON files. The CLI will automatically look for flows in this directory.
+Flows are stored in the `flows/` directory as JSON files. The CLI automatically looks for flows in this directory.
 
 ### Flow Structure
 Each flow should have:
 - `name` - Flow name
-- `description` - Flow description
+- `description` - Flow description (optional)
 - `nodes` - Array of flow nodes
 - `edges` - Array of connections between nodes
 
@@ -162,8 +168,8 @@ Each flow should have:
   "nodes": [
     {
       "id": "start-node",
+      "type": "start",
       "data": {
-        "type": "start",
         "config": {
           "variables": [
             {
@@ -186,6 +192,9 @@ Each flow should have:
 
 ### Optional
 - `OPENAI_API_KEY` - OpenAI API key for LLM operations
+- `TELEGRAM_BOT_TOKEN` - Telegram bot token for approval workflows
+- `TELEGRAM_CHAT_ID` - Telegram chat ID for notifications
+- `COINGECKO_DEMO_API_KEY` - CoinGecko API key for market data
 
 ## Network Selection
 

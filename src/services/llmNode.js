@@ -46,10 +46,7 @@ class LLMNode {
         messageModifier: this.buildSystemPrompt(),
       });
 
-      console.log("✅ LLM Agent initialized successfully with sei-agent-kit npm package");
-      console.log(`🔧 Available tools: ${this.agentTools.length} blockchain tools loaded`);
-      console.log(`🌐 Network: ${this.seiKit.getNetworkInfo().network} (Chain ID: ${this.seiKit.getNetworkInfo().chainId})`);
-      console.log(`🤖 LLM Provider: OpenAI (${this.config.model || 'gpt-4o-mini'})`);
+      
     } catch (error) {
       console.error("❌ Failed to initialize LLM Agent:", error.message);
       this.agent = null;
@@ -241,7 +238,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
   async processAutomatedInput(userInput) {
     // Resolve variables in the input
     const resolvedInput = this.resolveVariablesInInput(userInput);
-    console.log(`🤖 LLM Agent: Processing input: ${resolvedInput}`);
+
     
     // Check if API key is configured
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes('your_')) {
@@ -251,7 +248,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
     }
     
     try {
-      console.log("🔍 Using sei-agent-kit npm package with React agent...");
+  
       
       // Use the agent to process the input - ALWAYS use React agent for sei-agent-kit compatibility
       const responseStream = await this.agent.stream(
@@ -266,10 +263,8 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
         if ("agent" in responseChunk) {
           const agentMessage = responseChunk.agent.messages[0].content;
           finalResponse = agentMessage;
-          console.log("🤖 Agent Response:", agentMessage);
         } else if ("tools" in responseChunk) {
           const toolMessage = responseChunk.tools.messages[0].content;
-          console.log("🔧 Tool Response:", toolMessage);
         }
       }
       
@@ -317,7 +312,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
               });
             }
           }
-          console.log("✅ Action Output Parsed:", actionData);
+
           return JSON.stringify(actionData);
         }
       }
@@ -361,7 +356,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
         
         if (value !== undefined) {
           resolvedInput = resolvedInput.replace(match, value);
-          console.log(`🔧 Resolved variable ${variablePath}: ${value}`);
+
         } else {
           console.warn(`⚠️ Variable not found: ${variablePath}`);
         }
@@ -399,8 +394,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
   }
   
   async startInteractiveChat(initialInput = null) {
-    console.log("🤖 LLM Agent: Starting interactive chat mode...");
-    console.log("Type 'exit' or 'quit' to end the chat session.\n");
+
     
     const rl = readline.createInterface({
       input: process.stdin,
@@ -416,20 +410,20 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
     try {
       // Show initial message if provided
       if (initialInput) {
-        console.log(`🤖 Initial Message: ${initialInput}\n`);
+  
       }
       
       while (true) {
         const userInput = await askQuestion();
         
         if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
-          console.log("🤖 Chat session ended. Goodbye!");
+  
           break;
         }
         
         if (userInput.trim()) {
           lastOutput = await this.processChatInput(userInput);
-          console.log(`🤖 Assistant: ${lastOutput}\n`);
+  
         }
       }
     } finally {
@@ -446,7 +440,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
         return "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.";
       }
       
-      console.log("🔍 Using sei-agent-kit npm package for chat...");
+  
       
       // Use the agent to process the chat input
       const responseStream = await this.agent.stream(
@@ -461,7 +455,7 @@ Always use the blockchain tools to get real-time data. Check workflow variables 
         if ("agent" in responseChunk) {
           finalResponse = responseChunk.agent.messages[0].content;
         } else if ("tools" in responseChunk) {
-          console.log("🔧 Tool executed:", responseChunk.tools.messages[0].content);
+  
         }
       }
       

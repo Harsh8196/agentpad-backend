@@ -1,100 +1,119 @@
 # Telegram Webhook Setup Guide
 
-This guide will help you set up Telegram webhooks for AgentPad's interactive approval workflows.
+This guide explains how Telegram webhooks work with AgentPad's interactive approval workflows.
+
+## ⚠️ Important Note
+
+**Manual webhook setup is NOT required!** The AgentPad workflow executor automatically starts and manages the webhook server when needed. You only need to configure your environment variables.
 
 ## Prerequisites
 
 1. **Telegram Bot** - Created with @BotFather
-2. **Bot Token** - From BotFather
+2. **Bot Token** - From BotFather  
 3. **Chat ID** - Your personal or group chat ID
-4. **Public URL** - For webhook (ngrok, VPS, or cloud service)
+4. **Environment Variables** - Set in your `.env` file
 
-## Option 1: Development Setup (ngrok)
+## Automatic Webhook Management
 
-### Step 1: Install ngrok
+### How It Works
+
+1. **Automatic Start**: When you run a flow that contains Telegram or User Approval nodes, the workflow executor automatically:
+   - Starts a webhook server on port 3001 (or next available port)
+   - Registers the webhook with Telegram
+   - Handles incoming webhook requests
+
+2. **Automatic Cleanup**: When all flows stop, the webhook server is automatically stopped
+
+3. **Port Management**: If port 3001 is busy, the system automatically tries the next available port
+
+### Environment Variables
+
+Set these in your `.env` file:
+
 ```bash
-# Download from https://ngrok.com/
-# Or install via npm
-npm install -g ngrok
+# Required for Telegram functionality
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# Optional: Custom webhook port (default: 3001)
+WEBHOOK_PORT=3001
 ```
 
-### Step 2: Set Environment Variables
-```powershell
-# In PowerShell (backend directory)
-$env:TELEGRAM_BOT_TOKEN="your_bot_token_here"
-$env:TELEGRAM_CHAT_ID="your_chat_id_here"
-```
+## Development Setup
 
-### Step 3: Start ngrok Tunnel
+### Step 1: Create Telegram Bot
+1. Message @BotFather on Telegram
+2. Use `/newbot` command
+3. Follow instructions to create bot
+4. Save the bot token
+
+### Step 2: Get Chat ID
+1. Start a chat with your bot
+2. Send a message to the bot
+3. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
+4. Find your chat ID in the response
+
+### Step 3: Set Environment Variables
 ```bash
-# In a new terminal
-ngrok http 3000
+# In your .env file
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_CHAT_ID=123456789
 ```
 
-Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
+### Step 4: Test with a Flow
+1. Create a flow with Telegram or User Approval nodes
+2. Run the flow: `npm run agentpad start your_flow`
+3. The webhook server will start automatically
+4. Check logs for webhook server status
 
-### Step 4: Set Up Webhook
+## Production Setup
+
+### Option 1: VPS/Cloud Server
+
+1. **Deploy AgentPad backend** to your server
+2. **Set environment variables**:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your_bot_token"
+   export TELEGRAM_CHAT_ID="your_chat_id"
+   ```
+3. **Run flows normally** - webhook server starts automatically
+4. **Configure firewall** to allow incoming connections on webhook port
+
+### Option 2: Cloud Services (Heroku, Railway, etc.)
+
+1. **Deploy to cloud service**
+2. **Set environment variables** in service dashboard
+3. **Run flows** - webhook server starts automatically
+4. **Use service URL** for webhook (cloud services handle this)
+
+## Testing Your Setup
+
+### Step 1: Create Test Flow
+Create a simple flow with:
+- Start node
+- Telegram node (with interactive buttons)
+- User Approval node
+
+### Step 2: Run the Flow
 ```bash
-# In backend directory
-node setup-webhook.js https://abc123.ngrok.io
+npm run agentpad start your_test_flow
 ```
 
-## Option 2: Production Setup (VPS/Cloud)
-
-### Step 1: Deploy to VPS
-1. Upload AgentPad backend to your VPS
-2. Install dependencies: `npm install`
-3. Set environment variables
-4. Start webhook server: `node setup-webhook.js`
-
-### Step 2: Configure Domain
-1. Point your domain to your VPS
-2. Set up SSL certificate (Let's Encrypt)
-3. Configure reverse proxy (nginx)
-
-### Step 3: Set Webhook URL
-```bash
-# Replace with your domain
-node setup-webhook.js https://yourdomain.com
+### Step 3: Check Logs
+Look for these messages:
+```
+✅ Webhook server started for Telegram approvals on port 3001
+[WEBHOOK] Webhook server started on port 3001
 ```
 
-## Option 3: Cloud Services
+### Step 4: Test Interaction
+1. Send message to your bot
+2. Press interactive buttons
+3. Verify approval workflow works
 
-### Heroku
-1. Deploy to Heroku
-2. Set environment variables in Heroku dashboard
-3. Use Heroku URL: `https://your-app.herokuapp.com`
+## Webhook Endpoints (Automatic)
 
-### Railway
-1. Deploy to Railway
-2. Set environment variables
-3. Use Railway URL: `https://your-app.railway.app`
-
-### Vercel
-1. Deploy to Vercel
-2. Set environment variables
-3. Use Vercel URL: `https://your-app.vercel.app`
-
-## Testing Your Webhook
-
-### Step 1: Start Webhook Server
-```bash
-node setup-webhook.js
-```
-
-### Step 2: Test Basic Functionality
-1. Send a message to your bot
-2. Check server logs for webhook receipt
-3. Verify bot responds
-
-### Step 3: Test Interactive Buttons
-1. Create a flow with Telegram + User Approval nodes
-2. Configure interactive buttons
-3. Run the flow
-4. Press buttons in Telegram
-5. Verify approval workflow
-
-## Webhook Endpoints
+The workflow executor automatically creates these endpoints:
 
 ### Health Check
 ```
@@ -106,38 +125,29 @@ Returns server status
 ```
 POST /webhook/telegram
 ```
-Receives Telegram updates
-
-### Webhook Setup
-```
-POST /webhook/setup
-Body: {"webhookUrl": "https://your-domain.com"}
-```
-Configures Telegram webhook
+Receives Telegram updates (handled automatically)
 
 ## Troubleshooting
 
 ### Common Issues
 
+**❌ "Port 3001 already in use"**
+- The system automatically tries the next available port
+- Check logs for the actual port being used
+- If all ports are busy, stop other applications
+
 **❌ "Webhook URL must be HTTPS"**
-- Use HTTPS URL (ngrok provides this)
-- Ensure SSL certificate is valid
+- For development: Use ngrok or similar tunnel service
+- For production: Ensure your server has SSL certificate
 
 **❌ "Webhook URL must be publicly accessible"**
-- Use ngrok for development
-- Use VPS/cloud for production
+- For development: Use ngrok tunnel
+- For production: Ensure server is publicly accessible
 - Check firewall settings
 
-**❌ "Invalid webhook URL"**
-- Ensure URL is accessible
-- Check for typos
-- Verify port forwarding
-
-**❌ "Webhook already set"**
-- Delete existing webhook first:
-  ```
-  https://api.telegram.org/bot<TOKEN>/deleteWebhook
-  ```
+**❌ "Invalid bot token"**
+- Verify your bot token is correct
+- Ensure bot is not deleted or disabled
 
 ### Debug Commands
 
@@ -146,16 +156,14 @@ Configures Telegram webhook
 curl https://api.telegram.org/bot<TOKEN>/getWebhookInfo
 ```
 
-**Delete Webhook**
+**Delete Webhook (if needed)**
 ```bash
 curl -X POST https://api.telegram.org/bot<TOKEN>/deleteWebhook
 ```
 
-**Test Webhook URL**
+**Check Flow Status**
 ```bash
-curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://your-domain.com/webhook/telegram"}'
+npm run agentpad status
 ```
 
 ## Security Considerations
@@ -166,15 +174,14 @@ curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
 - Use secure environment variables in production
 
 ### Webhook Security
-- Use HTTPS only
-- Consider webhook secret validation
-- Rate limit webhook endpoints
-- Monitor for abuse
+- Use HTTPS only in production
+- Monitor webhook endpoints for abuse
+- Set reasonable approval timeouts
 
 ### Access Control
 - Limit who can approve actions
 - Log all approval activities
-- Set reasonable timeouts
+- Use secure chat IDs
 
 ## Integration with AgentPad
 
@@ -182,34 +189,50 @@ curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
 1. Add Telegram node with interactive buttons
 2. Add User Approval node
 3. Configure approval timeout
-4. Set up conditional routing
+4. Set up conditional routing based on approval result
 
 ### Example Flow
 ```
-Start → LLM Analysis → Conditional → Telegram (Interactive) → User Approval → Conditional → Blockchain
+Start → LLM Analysis → Conditional → Telegram (Interactive) → User Approval → Conditional → Blockchain Action
 ```
 
 ### Variables
-- `telegramChatId` - Chat ID for notifications
-- `approvalResult` - Result from approval node
+- `approvalResult` - Result from approval node (`approved`, `rejected`, `timeout`)
 - `userResponse` - User's response message
+- `approvalId` - Unique ID for the approval request
 
 ## Monitoring
 
 ### Logs
-- Webhook server logs all activities
+- Webhook server logs all activities automatically
 - Check for failed webhook deliveries
 - Monitor approval timeouts
 
-### Metrics
-- Track approval response times
-- Monitor webhook success rate
-- Log user interaction patterns
+### Flow Status
+```bash
+# Check running flows
+npm run agentpad status
+
+# Check specific flow
+npm run agentpad status flow_name
+```
 
 ## Support
 
 If you encounter issues:
-1. Check server logs
-2. Verify webhook configuration
-3. Test with simple messages first
-4. Ensure all environment variables are set 
+1. Check flow execution logs
+2. Verify environment variables are set correctly
+3. Test with simple Telegram messages first
+4. Ensure bot token and chat ID are correct
+5. Check if webhook server started successfully in logs
+
+## Migration from Manual Setup
+
+If you previously used manual webhook setup:
+
+1. **Stop manual webhook server** (if running)
+2. **Remove manual webhook setup** - no longer needed
+3. **Set environment variables** in `.env` file
+4. **Run flows normally** - webhook server starts automatically
+
+The automatic webhook management is more reliable and easier to use than manual setup. 

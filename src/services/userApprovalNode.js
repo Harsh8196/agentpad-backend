@@ -60,6 +60,11 @@ class UserApprovalNode {
         for (const [id, approval] of this.context.webhookHandler.pendingApprovals) {
           logger.info(`[USER_APPROVAL] - ${id}: chat ${approval.chatId}, status ${approval.status}`);
         }
+
+        // Send interactive Telegram message to request approval
+        await this.sendApprovalRequest(chatId).catch((err) => {
+          logger.error(`[USER_APPROVAL] Failed to send approval request: ${err.message}`);
+        });
         
         // Poll for approval result
         return new Promise((resolve, reject) => {
@@ -129,6 +134,65 @@ class UserApprovalNode {
           timestamp: Date.now()
         });
       }, 2000); // 2 second delay for testing
+    });
+  }
+
+  async sendApprovalRequest(chatId) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      logger.warn('[USER_APPROVAL] TELEGRAM_BOT_TOKEN not set; cannot send approval message');
+      return;
+    }
+
+    const actions = Array.isArray(this.approvalActions) && this.approvalActions.length > 0
+      ? this.approvalActions
+      : ['approve', 'reject'];
+
+    // Build inline keyboard (2 buttons per row)
+    const inlineKeyboard = [];
+    let currentRow = [];
+    for (const action of actions) {
+      currentRow.push({ text: action.charAt(0).toUpperCase() + action.slice(1), callback_data: action });
+      if (currentRow.length === 2) {
+        inlineKeyboard.push(currentRow);
+        currentRow = [];
+      }
+    }
+    if (currentRow.length > 0) inlineKeyboard.push(currentRow);
+
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const text = this.resolveVariablesInMessage(this.message || 'Please approve this action');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: inlineKeyboard }
+      })
+    });
+
+    if (!response.ok) {
+      let description = `${response.status} ${response.statusText}`;
+      try { const data = await response.json(); description = data.description || description; } catch {}
+      throw new Error(`Telegram API error: ${description}`);
+    }
+
+    const result = await response.json();
+    logger.info(`[USER_APPROVAL] Approval request sent to chat ${chatId} (message_id=${result?.result?.message_id})`);
+  }
+
+  resolveVariablesInMessage(message) {
+    if (!message || typeof message !== 'string') return '';
+    return message.replace(/\{([^}]+)\}/g, (_match, variableName) => {
+      const value = this.context.variables?.[variableName];
+      if (value === undefined || value === null) return '';
+      if (typeof value === 'object') {
+        try { return JSON.stringify(value); } catch { return String(value); }
+      }
+      return String(value);
     });
   }
 

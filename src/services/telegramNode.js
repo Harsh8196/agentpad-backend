@@ -133,12 +133,22 @@ class TelegramNode {
 
   resolveVariablesInMessage(message) {
     if (!message) return '';
-    
-    // Replace {variableName} with actual values
-    return message.replace(/\{([^}]+)\}/g, (match, variableName) => {
-      const value = this.context.variables[variableName];
-      return value !== undefined ? String(value) : match;
-    });
+    let resolved = String(message);
+    const pattern = /\{([^}]+)\}/g;
+    // Resolve repeatedly in case variables contain other placeholders
+    for (let i = 0; i < 3; i += 1) {
+      let changed = false;
+      resolved = resolved.replace(pattern, (match, variableName) => {
+        const value = this.context.variables?.[variableName];
+        if (value !== undefined) {
+          changed = true;
+          return typeof value === 'object' ? JSON.stringify(value) : String(value);
+        }
+        return match; // leave unresolved for next pass / logging
+      });
+      if (!changed) break;
+    }
+    return resolved;
   }
 }
 

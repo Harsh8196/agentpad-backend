@@ -1,0 +1,106 @@
+{
+  "name": "Coingecko Data",
+  "description": "",
+  "nodes": [
+    {
+      "id": "start-node",
+      "data": {
+        "type": "start",
+        "label": "Start",
+        "config": {
+          "variables": [
+            {
+              "name": "marketdata",
+              "type": "object"
+            }
+          ]
+        },
+        "status": "ready",
+        "description": "Flow execution starts here"
+      },
+      "type": "start",
+      "width": 220,
+      "height": 119,
+      "dragging": false,
+      "position": {
+        "x": -347.9546768698684,
+        "y": 11.9293540933906
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": -347.9546768698684,
+        "y": 11.9293540933906
+      }
+    },
+    {
+      "id": "marketData-1755244934301",
+      "data": {
+        "type": "marketData",
+        "label": "Market Data",
+        "config": {
+          "symbol": "sei",
+          "outputVariable": "marketdata"
+        },
+        "status": "idle",
+        "description": "Fetch real-time token price and market data"
+      },
+      "type": "marketData",
+      "width": 277,
+      "height": 111,
+      "dragging": false,
+      "position": {
+        "x": -236.25610601969095,
+        "y": 164.7307176929359
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": -236.25610601969095,
+        "y": 164.7307176929359
+      }
+    },
+    {
+      "id": "logger-1755245557158",
+      "data": {
+        "type": "logger",
+        "label": "Logger",
+        "config": {
+          "level": "info",
+          "value": "{marketdata.price_usd}",
+          "message": ""
+        },
+        "status": "idle",
+        "description": "Configure your logger node"
+      },
+      "type": "logger",
+      "width": 185,
+      "height": 111,
+      "dragging": false,
+      "position": {
+        "x": 99.65199720351859,
+        "y": 186.02212646958242
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 99.65199720351859,
+        "y": 186.02212646958242
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-start-node-marketData-1755244934301",
+      "source": "start-node",
+      "target": "marketData-1755244934301",
+      "sourceHandle": null,
+      "targetHandle": null
+    },
+    {
+      "id": "reactflow__edge-marketData-1755244934301-logger-1755245557158",
+      "source": "marketData-1755244934301",
+      "target": "logger-1755245557158",
+      "sourceHandle": null,
+      "targetHandle": null
+    }
+  ],
+  "timestamp": "2025-08-17T04:54:29.482Z"
+}

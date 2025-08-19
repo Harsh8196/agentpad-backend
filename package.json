@@ -8,8 +8,7 @@
     "dev": "nodemon --exec tsx src/index.js",
     "start": "tsx src/index.js",
     "agentpad": "npx --no-install tsx --no-warnings bin/agentpad.js",
-    "webhook": "node manage-webhook.js",
-    "webhook-setup": "node setup-webhook.js",
+
     "build": "echo 'No build step required for Node.js'",
     "test": "jest",
     "lint": "eslint src/"

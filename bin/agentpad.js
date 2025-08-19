@@ -99,7 +99,7 @@ const runningFlows = new Map();
 const flowTracker = new FlowTracker();
 
 // Cleanup function for graceful shutdown
-function cleanup() {
+async function cleanup() {
   logger.info('Shutting down...');
   
   // Stop all running flows
@@ -108,6 +108,8 @@ function cleanup() {
       flowInfo.executor.webhookHandler.stop();
     }
   }
+  
+
   
   // Stop flow tracker
   flowTracker.stopAllFlows();
@@ -238,6 +240,7 @@ async function startFlow(flow, options) {
           executor.webhookHandler.stop();
           logger.info('🛑 Webhook server stopped');
         }
+
       }
     }
   }
