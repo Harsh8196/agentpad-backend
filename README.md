@@ -69,16 +69,6 @@ npm run agentpad status
 npm run agentpad validate flow_name
 ```
 
-### Direct Execution (Legacy)
-```bash
-# Single flow execution
-node src/index.js flow.json
-
-# Network-specific execution
-node src/index.js flow.json mainnet
-node src/index.js flow.json testnet
-```
-
 ## 🔗 Supported Blockchain Operations
 
 ### Basic Operations (All Networks)
